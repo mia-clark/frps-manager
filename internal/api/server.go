@@ -45,6 +45,7 @@ func NewRouter(d Deps) http.Handler {
 	configs := NewConfigsHandler(d.Manager, d.Logger)
 	life := NewLifecycleHandler(d.Manager, d.Logger)
 	status := NewStatusHandler(d.Manager)
+	runtime := NewRuntimeHandler(d.Manager)
 	validate := NewValidateHandler()
 	events := NewEventsHandler(d.Manager, d.Logger, d.Cfg.CORSOrigins)
 	logs := NewLogsHandler(d.Manager, d.Cfg.LogsDir, d.Logger, d.Cfg.CORSOrigins)
@@ -70,6 +71,11 @@ func NewRouter(d Deps) http.Handler {
 		r.Post("/api/v1/configs/{id}/stop", life.Stop)
 		r.Post("/api/v1/configs/{id}/reload", life.Reload)
 		r.Get("/api/v1/configs/{id}/status", status.Get)
+
+		// 运行时监控（只读，经 worker loopback 读 frps mem/clients）
+		r.Get("/api/v1/runtime/{id}/overview", runtime.Overview)
+		r.Get("/api/v1/runtime/{id}/proxies", runtime.Proxies)
+		r.Get("/api/v1/runtime/{id}/clients", runtime.Clients)
 
 		r.Post("/api/v1/validate", validate.Validate)
 

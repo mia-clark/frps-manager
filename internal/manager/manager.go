@@ -402,6 +402,21 @@ func (m *Manager) LogPath(id string) string {
 	return filepath.Join(m.opts.LogsDir, id+".log")
 }
 
+// Loopback returns the running worker's frps webServer loopback address and
+// credentials (HTTP Basic) for reading runtime metrics. ok=false if the
+// instance is not registered or not currently running.
+func (m *Manager) Loopback(id string) (addr, user, pass string, ok bool) {
+	inst := m.get(id)
+	if inst == nil {
+		return "", "", "", false
+	}
+	hs, running := inst.loopback()
+	if !running {
+		return "", "", "", false
+	}
+	return hs.Addr, hs.User, hs.Pass, true
+}
+
 // logWriter returns (creating if needed) the per-id append log writer that
 // receives the worker's stdout/stderr.
 func (m *Manager) logWriter(id string) *instanceLog {
