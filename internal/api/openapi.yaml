@@ -1,0 +1,374 @@
+openapi: 3.1.0
+info:
+  title: frpmgr-server API
+  description: |
+    Headless FRP client manager. Manages multiple frpc instances inside a
+    single process and exposes the full management surface (CRUD,
+    lifecycle, status, logs, import/export) through HTTP. Real-time
+    events (state changes, proxy status, log lines) are pushed via
+    WebSocket at /api/v1/events.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+security:
+  - BearerAuth: []
+tags:
+  - name: system
+  - name: configs
+  - name: proxies
+  - name: lifecycle
+  - name: logs
+  - name: import-export
+  - name: misc
+paths:
+  /api/v1/health:
+    get:
+      tags: [system]
+      security: []
+      summary: Liveness probe
+      responses:
+        '200':
+          description: OK
+  /api/v1/version:
+    get:
+      tags: [system]
+      summary: Version information
+      responses:
+        '200': { description: OK }
+  /api/v1/configs:
+    get:
+      tags: [configs]
+      summary: List configs
+      responses: { '200': { description: OK } }
+    post:
+      tags: [configs]
+      summary: Create config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, config]
+              properties:
+                id: { type: string }
+                config: { $ref: '#/components/schemas/ClientConfigV1' }
+      responses:
+        '201': { description: Created }
+        '409': { description: Already exists }
+  /api/v1/configs/reorder:
+    post:
+      tags: [configs]
+      summary: Persist display order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                order: { type: array, items: { type: string } }
+      responses: { '204': { description: OK } }
+  /api/v1/configs/{id}:
+    get:
+      tags: [configs]
+      summary: Get config
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK }, '404': { description: Not found } }
+    put:
+      tags: [configs]
+      summary: Replace config
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK } }
+    patch:
+      tags: [configs]
+      summary: Merge-patch config (RFC 7396)
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK } }
+    delete:
+      tags: [configs]
+      summary: Delete config
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '204': { description: OK } }
+  /api/v1/configs/{id}/duplicate:
+    post:
+      tags: [configs]
+      summary: Duplicate a config under a new id
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_id]
+              properties: { new_id: { type: string } }
+      responses: { '201': { description: Created } }
+  /api/v1/configs/{id}/raw:
+    get:
+      tags: [configs]
+      summary: Read raw TOML
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK } }
+    put:
+      tags: [configs]
+      summary: Write raw TOML/INI
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      requestBody:
+        required: true
+        content:
+          application/toml: { schema: { type: string } }
+          text/plain:       { schema: { type: string } }
+      responses: { '200': { description: OK } }
+  /api/v1/configs/{id}/proxies:
+    get:
+      tags: [proxies]
+      summary: List proxies with live status
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK } }
+    post:
+      tags: [proxies]
+      summary: Add proxy or visitor
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '201': { description: Created } }
+  /api/v1/configs/{id}/proxies/{name}:
+    get:
+      tags: [proxies]
+      summary: Get proxy
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: path, name: name, required: true, schema: { type: string } }
+      responses: { '200': { description: OK } }
+    put:
+      tags: [proxies]
+      summary: Update proxy
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: path, name: name, required: true, schema: { type: string } }
+      responses: { '204': { description: OK } }
+    delete:
+      tags: [proxies]
+      summary: Delete proxy
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: path, name: name, required: true, schema: { type: string } }
+      responses: { '204': { description: OK } }
+  /api/v1/configs/{id}/proxies/{name}/toggle:
+    post:
+      tags: [proxies]
+      summary: Toggle proxy enabled state
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: path, name: name, required: true, schema: { type: string } }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { enabled: { type: boolean } }
+      responses: { '204': { description: OK } }
+  /api/v1/configs/{id}/start:
+    post:
+      tags: [lifecycle]
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK } }
+  /api/v1/configs/{id}/stop:
+    post:
+      tags: [lifecycle]
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK } }
+  /api/v1/configs/{id}/reload:
+    post:
+      tags: [lifecycle]
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK } }
+  /api/v1/configs/{id}/status:
+    get:
+      tags: [lifecycle]
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK } }
+  /api/v1/configs/{id}/logs:
+    get:
+      tags: [logs]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: query, name: lines, schema: { type: integer, default: 200 } }
+        - { in: query, name: offset, schema: { type: integer, default: 0 } }
+      responses: { '200': { description: OK } }
+    delete:
+      tags: [logs]
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '204': { description: OK } }
+  /api/v1/configs/{id}/logs/files:
+    get:
+      tags: [logs]
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK } }
+  /api/v1/configs/{id}/logs/tail:
+    get:
+      tags: [logs]
+      summary: WebSocket — live log tail
+      description: 'Upgrade to WS. Each frame is a JSON object with a "line" key.'
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '101': { description: Switching Protocols } }
+  /api/v1/events:
+    get:
+      tags: [misc]
+      summary: WebSocket — global event stream
+      description: |
+        Upgrade to WS. Each frame is a JSON Event. Send
+        `{"action":"filter","types":[...],"config_ids":[...]}` to update
+        subscription, or `{"action":"unfilter"}` to receive everything.
+        Query params `types` and `config_ids` (csv) set the initial filter,
+        and `since=<seq>` replays events from the ring buffer.
+      responses: { '101': { description: Switching Protocols } }
+  /api/v1/validate:
+    post:
+      tags: [misc]
+      summary: Validate config without persisting
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/ClientConfigV1' } }
+          application/toml: { schema: { type: string } }
+      responses: { '200': { description: OK } }
+  /api/v1/import/file:
+    post:
+      tags: [import-export]
+      summary: Import single config (multipart upload)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                id:   { type: string }
+      responses: { '200': { description: OK } }
+  /api/v1/import/url:
+    post:
+      tags: [import-export]
+      summary: Import from HTTP URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url: { type: string }
+                id:  { type: string }
+      responses: { '200': { description: OK } }
+  /api/v1/import/text:
+    post:
+      tags: [import-export]
+      summary: Import inline TOML/INI text
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, text]
+              properties:
+                id:   { type: string }
+                text: { type: string }
+                format: { type: string, enum: [toml, ini] }
+      responses: { '200': { description: OK } }
+  /api/v1/import/zip:
+    post:
+      tags: [import-export]
+      summary: Import a ZIP backup
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses: { '200': { description: OK } }
+  /api/v1/configs/{id}/export:
+    get:
+      tags: [import-export]
+      summary: Download single config (TOML)
+      parameters: [ { in: path, name: id, required: true, schema: { type: string } } ]
+      responses: { '200': { description: OK } }
+  /api/v1/export/all:
+    get:
+      tags: [import-export]
+      summary: Download every config as a ZIP
+      responses: { '200': { description: OK } }
+  /api/v1/nathole/discover:
+    post:
+      tags: [misc]
+      summary: NAT-hole / STUN discovery
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { stun_server: { type: string } }
+      responses: { '200': { description: OK } }
+  /api/v1/system/info:
+    get:
+      tags: [system]
+      summary: Aggregate dashboard snapshot (host+cpu+mem+disk+net+conns+process)
+      responses: { '200': { description: OK } }
+  /api/v1/system/cpu:
+    get:
+      tags: [system]
+      summary: CPU usage and topology
+      parameters: [ { in: query, name: window, schema: { type: string, default: 200ms } } ]
+      responses: { '200': { description: OK } }
+  /api/v1/system/memory:
+    get:
+      tags: [system]
+      summary: Virtual + swap memory
+      responses: { '200': { description: OK } }
+  /api/v1/system/disk:
+    get:
+      tags: [system]
+      summary: Disk usage for root + data dir
+      parameters: [ { in: query, name: paths, schema: { type: string } } ]
+      responses: { '200': { description: OK } }
+  /api/v1/system/network:
+    get:
+      tags: [system]
+      summary: Per-interface cumulative byte/packet counters
+      responses: { '200': { description: OK } }
+  /api/v1/system/connections:
+    get:
+      tags: [system]
+      summary: Host-wide socket counts + daemon-owned subset
+      responses: { '200': { description: OK } }
+  /api/v1/system/process:
+    get:
+      tags: [system]
+      summary: Daemon process introspection (RSS, threads, goroutines, open files)
+      responses: { '200': { description: OK } }
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    ClientConfigV1:
+      description: |
+        Mirrors fatedier/frp v0.68 ClientCommonConfig plus an `frpmgr`
+        extension block ({name, manualStart, autoDelete}). See the
+        upstream FRP documentation for the full field list; the JSON
+        keys here match the camelCase used by frp.
+      type: object
+      additionalProperties: true
+    Event:
+      type: object
+      properties:
+        seq:       { type: integer }
+        type:      { type: string, enum: [instance.state, instance.error, proxy.status, config.changed, config.deleted, log.line] }
+        config_id: { type: string }
+        ts:        { type: string, format: date-time }
+        data:      { type: object, additionalProperties: true }
