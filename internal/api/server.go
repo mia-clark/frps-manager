@@ -11,6 +11,7 @@ import (
 	"github.com/mia-clark/frp-manager-server/internal/api/middleware"
 	"github.com/mia-clark/frp-manager-server/internal/appcfg"
 	"github.com/mia-clark/frp-manager-server/internal/manager"
+	"github.com/mia-clark/frp-manager-server/internal/metrics"
 	"github.com/mia-clark/frp-manager-server/web"
 )
 
@@ -19,6 +20,7 @@ type Deps struct {
 	Cfg     *appcfg.Config
 	Logger  *slog.Logger
 	Manager *manager.Manager
+	Metrics *metrics.Store // may be nil if metrics disabled
 }
 
 // NewRouter assembles the chi mux with all middleware and route groups
@@ -50,6 +52,7 @@ func NewRouter(d Deps) http.Handler {
 	events := NewEventsHandler(d.Manager, d.Logger, d.Cfg.CORSOrigins)
 	logs := NewLogsHandler(d.Manager, d.Cfg.LogsDir, d.Logger, d.Cfg.CORSOrigins)
 	imex := NewImportExportHandler(d.Manager, d.Logger)
+	mh := NewMetricsHandler(d.Metrics)
 
 	// Authenticated subtree.
 	r.Group(func(r chi.Router) {
@@ -76,6 +79,17 @@ func NewRouter(d Deps) http.Handler {
 		r.Get("/api/v1/runtime/{id}/overview", runtime.Overview)
 		r.Get("/api/v1/runtime/{id}/proxies", runtime.Proxies)
 		r.Get("/api/v1/runtime/{id}/clients", runtime.Clients)
+
+		// 历史流量曲线
+		r.Get("/api/v1/metrics/{id}/traffic", mh.Traffic)
+
+		// 告警规则与事件
+		r.Get("/api/v1/alerts/events", mh.AlertEvents)
+		r.Get("/api/v1/alerts", mh.ListAlerts)
+		r.Post("/api/v1/alerts", mh.CreateAlert)
+		r.Get("/api/v1/alerts/{id}", mh.GetAlert)
+		r.Put("/api/v1/alerts/{id}", mh.UpdateAlert)
+		r.Delete("/api/v1/alerts/{id}", mh.DeleteAlert)
 
 		r.Post("/api/v1/validate", validate.Validate)
 

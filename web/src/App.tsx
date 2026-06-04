@@ -8,6 +8,7 @@ import Configs from './pages/Configs';
 import Logs from './pages/Logs';
 import ImportExport from './pages/ImportExport';
 
+const Runtime = lazy(() => import('./pages/Runtime'));
 const SystemPage = lazy(() => import('./pages/System'));
 const ToolsValidate = lazy(() => import('./pages/ToolsValidate'));
 const TomlReference = lazy(() => import('./pages/TomlReference'));
@@ -37,6 +38,7 @@ function App() {
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="configs" element={<Configs />} />
+            <Route path="runtime" element={<Runtime />} />
             <Route path="logs" element={<Logs />} />
             <Route path="system" element={<SystemPage />} />
             <Route path="tools">

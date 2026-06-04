@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/mia-clark/frp-manager-server/internal/appcfg"
 	"github.com/mia-clark/frp-manager-server/internal/eventbus"
 	"github.com/mia-clark/frp-manager-server/internal/manager"
+	"github.com/mia-clark/frp-manager-server/internal/metrics"
 	"github.com/mia-clark/frp-manager-server/pkg/version"
 )
 
@@ -106,7 +108,21 @@ func runServe(args []string) int {
 	mgr.AutoStart()
 	defer mgr.Shutdown()
 
-	handler := api.NewRouter(api.Deps{Cfg: cfg, Logger: logger, Manager: mgr})
+	// 时序指标存储 + 采样器（P3）：纯 Go SQLite，落 $DataDir/metrics.db。
+	// 采样器经各 worker loopback 每 10s 读 frps mem 指标 → 落库 + 评估告警。
+	mstore, err := metrics.Open(filepath.Join(cfg.DataDir, "metrics.db"))
+	if err != nil {
+		logger.Warn("metrics store disabled", slog.Any("err", err))
+		mstore = nil
+	} else {
+		defer mstore.Close()
+		sampler := metrics.NewSampler(mstore, mgr, bus, logger, 10*time.Second, 7*24*time.Hour)
+		samplerCtx, cancelSampler := context.WithCancel(context.Background())
+		defer cancelSampler()
+		go sampler.Run(samplerCtx)
+	}
+
+	handler := api.NewRouter(api.Deps{Cfg: cfg, Logger: logger, Manager: mgr, Metrics: mstore})
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           handler,

@@ -3,6 +3,7 @@ import { Layout, Menu, Button, Space, Typography, Modal, Tag, Tooltip, theme as 
 import {
   DashboardOutlined,
   ClusterOutlined,
+  MonitorOutlined,
   FileTextOutlined,
   HddOutlined,
   ToolOutlined,
@@ -86,6 +87,7 @@ const MainLayout: React.FC = () => {
         label: '运行',
         children: [
           { key: '/configs', icon: <ClusterOutlined />, label: 'FRPS 实例' },
+          { key: '/runtime', icon: <MonitorOutlined />, label: '运行时监控' },
           { key: '/logs', icon: <FileTextOutlined />, label: '日志流' },
         ],
       },

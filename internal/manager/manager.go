@@ -402,6 +402,20 @@ func (m *Manager) LogPath(id string) string {
 	return filepath.Join(m.opts.LogsDir, id+".log")
 }
 
+// RunningIDs returns the ids of all instances currently in the started state.
+// Used by the metrics sampler to know which workers to poll.
+func (m *Manager) RunningIDs() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]string, 0, len(m.instances))
+	for id, inst := range m.instances {
+		if inst.State() == consts.ConfigStateStarted {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // Loopback returns the running worker's frps webServer loopback address and
 // credentials (HTTP Basic) for reading runtime metrics. ok=false if the
 // instance is not registered or not currently running.
