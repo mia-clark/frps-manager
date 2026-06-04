@@ -28,6 +28,8 @@ func main() {
 	switch os.Args[1] {
 	case "serve":
 		os.Exit(runServe(os.Args[2:]))
+	case "frps-worker":
+		os.Exit(runFrpsWorker(os.Args[2:]))
 	case "health":
 		os.Exit(runHealth(os.Args[2:]))
 	case "version", "-v", "--version":

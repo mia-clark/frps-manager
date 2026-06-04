@@ -1030,3 +1030,7 @@ if m.Manual == nil { m.Manual = map[string]bool{} }
 ### R8. 执行顺序微调（降级联风险）
 
 Task 6 是类型级联爆点（20+ 调用点改签名）。落地顺序：**1→2→3→4**（地基，可独立编译+测试通过并各自提交）→ **5+6 作为一个原子改动**（一起编过再提交，因互相依赖类型）→ **7→8→9**。Task 9 删 2000+ 行，务必 `go build ./...` 逐步验证无悬空 import。
+
+### R9. 【Task 4·实测修正】握手必须扫描 stdout，不能读首行
+
+Task 3 worker 实地冒烟（`frps-worker --config x --webport 45999`）发现：**frps 默认把运行日志打到 stdout**，第一行是 `frps tcp listen on 0.0.0.0:17000`，握手行 `FRPS_WORKER_READY ...` 排在其后。故 Task 4 的 `spawnWorker` **不能**用 `br.ReadString('\n')` 读一次首行当握手，必须**逐行扫描、跳过并转发非握手行给 logSink，直到匹配到 `FRPS_WORKER_READY` 前缀或超时**。`parseHandshake` 已能拒绝非匹配行，循环逻辑相应改为 for 循环。已验证：预分配非零 `--webport` 策略生效，dashboard 正确绑 loopback；worker 收到终止后端口正常释放。
