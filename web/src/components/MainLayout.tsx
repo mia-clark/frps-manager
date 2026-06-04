@@ -12,6 +12,8 @@ import {
   PoweroffOutlined,
   SafetyCertificateOutlined,
   BookOutlined,
+  LineChartOutlined,
+  BellOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
@@ -88,6 +90,8 @@ const MainLayout: React.FC = () => {
         children: [
           { key: '/configs', icon: <ClusterOutlined />, label: 'FRPS 实例' },
           { key: '/runtime', icon: <MonitorOutlined />, label: '运行时监控' },
+          { key: '/traffic', icon: <LineChartOutlined />, label: '历史流量' },
+          { key: '/alerts', icon: <BellOutlined />, label: '告警' },
           { key: '/logs', icon: <FileTextOutlined />, label: '日志流' },
         ],
       },

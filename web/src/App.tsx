@@ -9,6 +9,8 @@ import Logs from './pages/Logs';
 import ImportExport from './pages/ImportExport';
 
 const Runtime = lazy(() => import('./pages/Runtime'));
+const Traffic = lazy(() => import('./pages/Traffic'));
+const Alerts = lazy(() => import('./pages/Alerts'));
 const SystemPage = lazy(() => import('./pages/System'));
 const ToolsValidate = lazy(() => import('./pages/ToolsValidate'));
 const TomlReference = lazy(() => import('./pages/TomlReference'));
@@ -39,6 +41,8 @@ function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="configs" element={<Configs />} />
             <Route path="runtime" element={<Runtime />} />
+            <Route path="traffic" element={<Traffic />} />
+            <Route path="alerts" element={<Alerts />} />
             <Route path="logs" element={<Logs />} />
             <Route path="system" element={<SystemPage />} />
             <Route path="tools">

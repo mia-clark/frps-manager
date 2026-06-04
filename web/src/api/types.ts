@@ -137,3 +137,69 @@ export interface RuntimeClient {
   connectAt?: string;
   [key: string]: unknown;
 }
+
+// ── 历史流量 & 告警（GET /api/v1/metrics/*、/api/v1/alerts/*）──────────────
+// 权威来源：
+//   - internal/metrics/store.go          (TrafficPoint，snake_case JSON 标签)
+//   - internal/metrics/store_alerts.go    (AlertRule / AlertEvent，snake_case)
+//   - internal/api/metrics.go             (Traffic / *Alert* handler，响应信封)
+// 全部 snake_case，逐字对照 Go 源，不要改成驼峰。
+
+// 单个流量采样点（internal/metrics/store.go: TrafficPoint）。
+// in/out 是该 step 桶内的区间增量字节数；conns 是桶内瞬时连接数(max)。
+// inst_id/scope/key 在响应顶层已给出，逐点也会带，标 optional。
+export interface TrafficPoint {
+  ts: number; // unix 秒
+  in: number;
+  out: number;
+  conns: number;
+  inst_id?: string;
+  scope?: string;
+  key?: string;
+}
+
+// GET /api/v1/metrics/{id}/traffic 的响应信封（internal/api/metrics.go: Traffic）。
+export interface TrafficSeries {
+  inst_id: string;
+  scope: string;
+  key: string;
+  step: number;
+  points: TrafficPoint[] | null;
+}
+
+// 告警规则（internal/metrics/store_alerts.go: AlertRule）。
+export type AlertMetric = 'conns' | 'traffic_in_rate' | 'traffic_out_rate';
+export type AlertOp = '>' | '>=' | '<' | '<=';
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  inst_id: string; // 目标实例 id，"*" 表示全部
+  metric: AlertMetric;
+  op: AlertOp;
+  threshold: number;
+  for_seconds: number; // 持续多久才触发（去抖）
+  target: string; // 代理名，"" / "*" 为 server 级
+  webhook: string; // 可选，触发/解除时 POST 的 URL
+}
+
+// 告警事件（internal/metrics/store_alerts.go: AlertEvent）。
+export interface AlertEvent {
+  id: string;
+  rule_id: string;
+  inst_id: string;
+  target: string;
+  fired_at: number; // unix 秒
+  resolved_at: number; // 0 = 未解除
+  value: number;
+  state: 'firing' | 'resolved';
+}
+
+// 列表响应信封。
+export interface AlertRuleList {
+  items: AlertRule[];
+}
+export interface AlertEventList {
+  items: AlertEvent[];
+}
