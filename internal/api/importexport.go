@@ -202,18 +202,18 @@ func (h *ImportExportHandler) persistRaw(w http.ResponseWriter, id string, raw [
 		WriteError(w, http.StatusBadRequest, CodeBadRequest, err.Error(), nil)
 		return
 	}
-	snap, fresh, _ := h.m.Get(id, false)
-	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: toV1(fresh)})
+	snap, sc, mm, _ := h.m.Get(id)
+	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: sc, Frpmgr: mm})
 }
 
 // upsertRaw creates the config if absent, otherwise replaces its body.
 func (h *ImportExportHandler) upsertRaw(id string, raw []byte) error {
 	if !h.m.Exists(id) {
-		data, err := config.UnmarshalClientConf(raw)
+		sc, err := config.ParseServerTOML(raw)
 		if err != nil {
 			return fmt.Errorf("parse: %w", err)
 		}
-		return h.m.Create(id, data)
+		return h.m.Create(id, sc, manager.MgrMeta{Name: id})
 	}
 	return h.m.WriteRaw(id, raw)
 }

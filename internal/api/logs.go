@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -31,19 +30,14 @@ func NewLogsHandler(m *manager.Manager, logsDir string, log *slog.Logger, origin
 	return &LogsHandler{m: m, logsDir: logsDir, log: log, origins: origins}
 }
 
-// logCombinedPath 返回合并日志的绝对路径；所有 frpc 实例共写这一个文件。
-func (h *LogsHandler) logCombinedPath() string {
-	return filepath.Join(h.logsDir, manager.CombinedLogFileName)
+// logInstancePath 返回单个实例的独立日志文件绝对路径。子进程模型下，每个
+// frps worker 的 stdout/stderr 写入各自的 <id>.log，无需再按前缀过滤。
+func (h *LogsHandler) logInstancePath(id string) string {
+	return h.m.LogPath(id)
 }
 
-// instancePrefix 用于在合并日志中匹配单个实例的行。
-func instancePrefix(id string) string {
-	return "[inst=" + id + "]"
-}
-
-// Query returns the last `lines` lines (default 200) from the combined log
-// that belong to this instance (matched by [inst=<id>] prefix) and are not
-// older than the instance's LogViewSince watermark.
+// Query returns the last `lines` lines (default 200) from this instance's
+// log file that are not older than the instance's LogViewSince watermark.
 func (h *LogsHandler) Query(w http.ResponseWriter, r *http.Request) {
 	id := pathID(r)
 	if !h.m.Exists(id) {
@@ -51,13 +45,9 @@ func (h *LogsHandler) Query(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lines := atoiDefault(r.URL.Query().Get("lines"), 200)
-	prefix := instancePrefix(id)
 	since := h.m.LogViewSince(id)
 
-	got, err := util.ReadFileLinesFiltered(h.logCombinedPath(), lines, func(line string) bool {
-		if !strings.Contains(line, prefix) {
-			return false
-		}
+	got, err := util.ReadFileLinesFiltered(h.logInstancePath(id), lines, func(line string) bool {
 		if since == 0 {
 			return true
 		}
@@ -85,7 +75,7 @@ func (h *LogsHandler) Files(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusNotFound, CodeConfigNotFound, "config not found", nil)
 		return
 	}
-	files, dates, err := util.FindLogFiles(h.logCombinedPath())
+	files, dates, err := util.FindLogFiles(h.logInstancePath(id))
 	if err != nil {
 		WriteJSON(w, http.StatusOK, map[string]any{"items": []any{}})
 		return
@@ -142,11 +132,10 @@ func (h *LogsHandler) Tail(w http.ResponseWriter, r *http.Request) {
 	// 客户端主动关闭连接也能让下方 select 及时退出。
 	ctx := conn.CloseRead(r.Context())
 
-	t := logtail.New(h.logCombinedPath())
+	t := logtail.New(h.logInstancePath(id))
 	ch := t.Subscribe()
 	defer t.Stop()
 
-	prefix := instancePrefix(id)
 	since := h.m.LogViewSince(id)
 
 	ping := time.NewTicker(30 * time.Second)
@@ -159,9 +148,6 @@ func (h *LogsHandler) Tail(w http.ResponseWriter, r *http.Request) {
 		case line, ok := <-ch:
 			if !ok {
 				return
-			}
-			if !strings.Contains(line, prefix) {
-				continue
 			}
 			if since > 0 {
 				if ts, ok := parseLogLineTimestamp(line); ok && ts < since {

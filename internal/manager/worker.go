@@ -54,12 +54,24 @@ func parseHandshake(line string) (handshake, bool) {
 }
 
 // worker 监管一个 frps 子进程。
+//
+// cmd.Wait() 只能被调用一次，且不能并发调用。这里规定唯一所有者：reap()，
+// 由 instance 的退出守护 goroutine 调用恰好一次，完成后关闭 done。stop() 不
+// 自己调 Wait，而是发终止信号后等待 done——彻底避免并发 Wait 的未定义行为。
 type worker struct {
-	id      string
-	cmd     *exec.Cmd
-	hs      handshake
-	mu      sync.Mutex
-	stopped bool
+	id       string
+	cmd      *exec.Cmd
+	hs       handshake
+	done     chan struct{}
+	waitOnce sync.Once
+}
+
+// reap 调用 cmd.Wait() 恰好一次并关闭 done。是 cmd.Wait() 的唯一所有者。
+func (w *worker) reap() {
+	w.waitOnce.Do(func() {
+		_ = w.cmd.Wait()
+		close(w.done)
+	})
 }
 
 // freeLoopbackPort 预分配一个空闲 loopback 端口（立即释放，交给 worker 绑定）。
@@ -94,7 +106,7 @@ func spawnWorker(ctx context.Context, id, selfExePath, cfgPath string, logSink i
 		return nil, fmt.Errorf("start worker: %w", err)
 	}
 
-	w := &worker{id: id, cmd: cmd}
+	w := &worker{id: id, cmd: cmd, done: make(chan struct{})}
 	hsCh := make(chan handshake, 1)
 	go func() {
 		br := bufio.NewReader(stdout)
@@ -120,39 +132,36 @@ func spawnWorker(ctx context.Context, id, selfExePath, cfgPath string, logSink i
 	select {
 	case hs, ok := <-hsCh:
 		if !ok {
-			_ = kill(cmd)
+			// 握手失败路径：尚无 reaper goroutine，这里自行 Wait 回收。
+			_ = w.cmd.Process.Kill()
+			w.reap()
 			return nil, errors.New("worker exited before handshake")
 		}
 		w.hs = hs
 		return w, nil
 	case <-time.After(handshakeTimeout):
-		_ = kill(cmd)
+		_ = w.cmd.Process.Kill()
+		w.reap()
 		return nil, errors.New("worker handshake timeout")
 	}
 }
 
-// stop 优雅终止子进程：优先平台信号（Unix SIGTERM），再 Wait 回收避免僵尸。
+// stop 终止子进程：先发平台终止信号（Unix SIGTERM / Windows Kill），再等待
+// reaper（instance 的退出守护 goroutine）完成 cmd.Wait()。stop 自身不调 Wait，
+// 故不会与 reaper 并发。若 5s 内未退出则硬杀兜底。
 func (w *worker) stop() error {
-	w.mu.Lock()
-	if w.stopped {
-		w.mu.Unlock()
-		return nil
-	}
-	w.stopped = true
-	w.mu.Unlock()
 	if w.cmd.Process != nil {
 		_ = signalTerminate(w.cmd.Process)
 	}
-	_ = w.cmd.Wait()
-	return nil
-}
-
-// kill 硬杀子进程（握手失败/超时的兜底）。
-func kill(cmd *exec.Cmd) error {
-	if cmd.Process == nil {
-		return nil
+	select {
+	case <-w.done:
+	case <-time.After(5 * time.Second):
+		if w.cmd.Process != nil {
+			_ = w.cmd.Process.Kill()
+		}
+		<-w.done
 	}
-	return cmd.Process.Kill()
+	return nil
 }
 
 // selfExe 返回当前可执行文件路径，用于 re-exec frps-worker。

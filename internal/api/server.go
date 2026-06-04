@@ -43,14 +43,12 @@ func NewRouter(d Deps) http.Handler {
 	}
 
 	configs := NewConfigsHandler(d.Manager, d.Logger)
-	proxies := NewProxiesHandler(d.Manager, d.Logger)
 	life := NewLifecycleHandler(d.Manager, d.Logger)
 	status := NewStatusHandler(d.Manager)
 	validate := NewValidateHandler()
 	events := NewEventsHandler(d.Manager, d.Logger, d.Cfg.CORSOrigins)
 	logs := NewLogsHandler(d.Manager, d.Cfg.LogsDir, d.Logger, d.Cfg.CORSOrigins)
 	imex := NewImportExportHandler(d.Manager, d.Logger)
-	nat := NewNatholeHandler()
 
 	// Authenticated subtree.
 	r.Group(func(r chi.Router) {
@@ -67,13 +65,6 @@ func NewRouter(d Deps) http.Handler {
 		r.Post("/api/v1/configs/{id}/duplicate", configs.Duplicate)
 		r.Get("/api/v1/configs/{id}/raw", configs.GetRaw)
 		r.Put("/api/v1/configs/{id}/raw", configs.PutRaw)
-
-		r.Get("/api/v1/configs/{id}/proxies", proxies.List)
-		r.Post("/api/v1/configs/{id}/proxies", proxies.Create)
-		r.Get("/api/v1/configs/{id}/proxies/{name}", proxies.Get)
-		r.Put("/api/v1/configs/{id}/proxies/{name}", proxies.Update)
-		r.Delete("/api/v1/configs/{id}/proxies/{name}", proxies.Delete)
-		r.Post("/api/v1/configs/{id}/proxies/{name}/toggle", proxies.Toggle)
 
 		r.Post("/api/v1/configs/{id}/start", life.Start)
 		r.Post("/api/v1/configs/{id}/stop", life.Stop)
@@ -95,8 +86,6 @@ func NewRouter(d Deps) http.Handler {
 		r.Post("/api/v1/import/zip", imex.ImportZIP)
 		r.Get("/api/v1/configs/{id}/export", imex.ExportConfig)
 		r.Get("/api/v1/export/all", imex.ExportAll)
-
-		r.Post("/api/v1/nathole/discover", nat.Discover)
 
 		r.Get("/api/v1/system/info", sys.Info)
 		r.Get("/api/v1/system/cpu", sys.CPU)
