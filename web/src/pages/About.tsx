@@ -27,6 +27,7 @@ import {
   ToolOutlined,
   DownloadOutlined,
   ReadOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import client from '../api/client';
 
@@ -47,6 +48,7 @@ const APP_DOCS_PATH = '/api/docs/';
 
 const INSTALL_URL_CN = 'https://gh-raw.966788.xyz/frps-mgr/install.sh';
 const INSTALL_URL_GH = 'https://raw.githubusercontent.com/mia-clark/frps-manager/main/scripts/install.sh';
+const INSTALL_URL_PS1 = 'https://raw.githubusercontent.com/mia-clark/frps-manager/main/scripts/install.ps1';
 const DOCKER_IMAGE = 'ghcr.io/mia-clark/frps-manager:latest';
 
 const About: React.FC = () => {
@@ -332,6 +334,9 @@ function renderInstallTab(opts: { token: TokenLike; copyText: (s: string) => voi
   const ghAuto = `curl -fsSL ${INSTALL_URL_GH} | sh -s -- -y`;
   const cnUpdate = `curl -fsSL ${INSTALL_URL_CN} | sh -s -- --update --force`;
   const cnUninstall = `curl -fsSL ${INSTALL_URL_CN} | sh -s -- --uninstall`;
+  const winInstall = `irm ${INSTALL_URL_PS1} | iex`;
+  const winCustom = `$env:FRPSMGR_PORT=9000; $env:FRPSMGR_API_TOKEN='我的强随机令牌'; $env:ASSUME_YES=1; irm ${INSTALL_URL_PS1} | iex`;
+  const linuxFull = `curl -fsSL ${INSTALL_URL_CN} | sh -s -- -y -p 9000 -t 我的强随机令牌`;
   const manualBin = `# 1. 到 Releases 下载对应平台压缩包
 curl -LO https://github.com/mia-clark/frps-manager/releases/latest/download/frpsmgrd_linux_amd64.tar.gz
 
@@ -346,7 +351,7 @@ FRPSMGR_API_TOKEN=$(openssl rand -hex 32) ./frpsmgrd serve`;
       <Alert
         type="info"
         showIcon
-        message="一键安装支持 Linux / macOS / FreeBSD，自动识别系统、CPU 架构，安装并注册成系统服务（systemd / OpenRC / launchd）。Windows 请用「Docker」或「下载二进制」。"
+        message="一键安装支持 Linux / macOS / FreeBSD / Windows，自动识别系统、CPU 架构，安装并注册成系统服务（systemd / OpenRC / launchd / Windows 服务）。"
         style={{ marginBottom: 16 }}
       />
       <Alert
@@ -382,6 +387,42 @@ FRPSMGR_API_TOKEN=$(openssl rand -hex 32) ./frpsmgrd serve`;
 
       <SectionTitle icon={<GithubOutlined />}>海外服务器 / GitHub 直连</SectionTitle>
       <CodeBlock code={ghAuto} token={token} onCopy={copyText} language="sh" />
+
+      <SectionTitle icon={<ThunderboltOutlined />}>Windows（管理员 PowerShell）</SectionTitle>
+      <Paragraph type="secondary" style={{ marginBottom: 8, fontSize: 12.5 }}>
+        交互安装（逐步问端口和令牌）：
+      </Paragraph>
+      <CodeBlock code={winInstall} token={token} onCopy={copyText} language="powershell" />
+      <Paragraph type="secondary" style={{ marginBottom: 8, fontSize: 12.5 }}>
+        全自动 + 指定端口 + 令牌（PowerShell 用环境变量代替命令行参数）：
+      </Paragraph>
+      <CodeBlock code={winCustom} token={token} onCopy={copyText} language="powershell" />
+
+      <Alert
+        type="info"
+        showIcon
+        message="完整三系统对照（指定端口 + 令牌，全自动一键复制）"
+        description={
+          <div style={{ fontSize: 12.5 }}>
+            <div style={{ marginTop: 8 }}>
+              <Text strong>Linux</Text>（systemd / OpenRC，开机自启）：
+            </div>
+            <CodeBlock code={linuxFull} token={token} onCopy={copyText} language="sh" />
+            <div>
+              <Text strong>macOS</Text>（launchd，开机自启）—— 与 Linux 同脚本：
+            </div>
+            <CodeBlock code={linuxFull} token={token} onCopy={copyText} language="sh" />
+            <div>
+              <Text strong>Windows</Text>（NSSM 包装 Windows 服务，<Text type="warning">需管理员 PowerShell</Text>）：
+            </div>
+            <CodeBlock code={winCustom} token={token} onCopy={copyText} language="powershell" />
+            <div style={{ marginTop: 4, opacity: 0.7 }}>
+              把 <Text code>9000</Text> 和 <Text code>我的强随机令牌</Text> 改成你想要的值；三套都装完用统一的 <Text code>fms start/status/info</Text> 运维。
+            </div>
+          </div>
+        }
+        style={{ marginTop: 14, marginBottom: 14 }}
+      />
 
       <SectionTitle>升级到最新版（保留端口/令牌/数据）</SectionTitle>
       <CodeBlock code={cnUpdate} token={token} onCopy={copyText} language="sh" />
