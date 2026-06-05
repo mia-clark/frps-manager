@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/mia-clark/frp-manager-server/internal/api/apiresp"
+	"github.com/mia-clark/frps-manager/internal/api/apiresp"
 )
 
 // Re-exports of the apiresp helpers so handlers in this package can use

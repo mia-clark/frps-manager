@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/mia-clark/frp-manager-server/internal/manager"
-	"github.com/mia-clark/frp-manager-server/pkg/config"
+	"github.com/mia-clark/frps-manager/internal/manager"
+	"github.com/mia-clark/frps-manager/pkg/config"
 )
 
 // ConfigsHandler serves the /api/v1/configs endpoints.
@@ -21,35 +21,37 @@ func NewConfigsHandler(m *manager.Manager, log *slog.Logger) *ConfigsHandler {
 	return &ConfigsHandler{m: m, log: log}
 }
 
-// configEnvelope wraps an instance snapshot plus the full V1 config in
-// one response body. Used by GET /configs/{id}.
+// configEnvelope wraps an instance snapshot, the full frps ServerConfigV1 and
+// the manager-level metadata (name/manualStart) in one response body.
 type configEnvelope struct {
 	manager.Snapshot
-	Config *config.ClientConfigV1 `json:"config"`
+	Config *config.ServerConfigV1 `json:"config"`
+	Frpsmgr manager.MgrMeta        `json:"frpsmgr"`
 }
 
 // createReq is the input body for POST /configs.
 type createReq struct {
 	ID     string                 `json:"id"`
-	Config *config.ClientConfigV1 `json:"config"`
+	Config *config.ServerConfigV1 `json:"config"`
+	Frpsmgr manager.MgrMeta        `json:"frpsmgr"`
 }
 
-// List returns every registered config (without per-proxy status).
+// List returns every registered config.
 func (h *ConfigsHandler) List(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]any{"items": h.m.List()})
 }
 
-// Get returns one config snapshot plus the parsed V1 body.
+// Get returns one config snapshot plus the parsed ServerConfigV1 body.
 func (h *ConfigsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := pathID(r)
-	snap, data, err := h.m.Get(id, false)
+	snap, sc, mm, err := h.m.Get(id)
 	if writeManagerError(w, err) {
 		return
 	}
-	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: toV1(data)})
+	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: sc, Frpsmgr: mm})
 }
 
-// Create persists a new config from the supplied V1 body.
+// Create persists a new config from the supplied ServerConfigV1 body.
 func (h *ConfigsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req createReq
 	if !decodeJSON(w, r, &req) {
@@ -59,19 +61,19 @@ func (h *ConfigsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusBadRequest, CodeBadRequest, "id and config are required", nil)
 		return
 	}
-	data := fromV1(req.Config)
-	if err := h.m.Create(req.ID, data); writeManagerError(w, err) {
+	if err := h.m.Create(req.ID, req.Config, req.Frpsmgr); writeManagerError(w, err) {
 		return
 	}
-	snap, fresh, _ := h.m.Get(req.ID, false)
-	WriteJSON(w, http.StatusCreated, configEnvelope{Snapshot: snap, Config: toV1(fresh)})
+	snap, sc, mm, _ := h.m.Get(req.ID)
+	WriteJSON(w, http.StatusCreated, configEnvelope{Snapshot: snap, Config: sc, Frpsmgr: mm})
 }
 
 // Update replaces the whole config body for an existing instance.
 func (h *ConfigsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := pathID(r)
 	var body struct {
-		Config *config.ClientConfigV1 `json:"config"`
+		Config *config.ServerConfigV1 `json:"config"`
+		Frpsmgr manager.MgrMeta        `json:"frpsmgr"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -80,25 +82,23 @@ func (h *ConfigsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusBadRequest, CodeBadRequest, "config is required", nil)
 		return
 	}
-	data := fromV1(body.Config)
-	if err := h.m.Update(id, data); writeManagerError(w, err) {
+	if err := h.m.Update(id, body.Config, body.Frpsmgr); writeManagerError(w, err) {
 		return
 	}
-	snap, fresh, _ := h.m.Get(id, false)
-	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: toV1(fresh)})
+	snap, sc, mm, _ := h.m.Get(id)
+	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: sc, Frpsmgr: mm})
 }
 
-// Patch applies a JSON merge over the existing V1 body. The implementation
-// is a simple "marshal current, merge into raw JSON, unmarshal back" round
-// trip; it does not need to be field-aware.
+// Patch applies a JSON merge over the existing ServerConfigV1 body. The
+// manager metadata (frpsmgr) is preserved unless the patch carries a
+// top-level "frpsmgr" object.
 func (h *ConfigsHandler) Patch(w http.ResponseWriter, r *http.Request) {
 	id := pathID(r)
-	_, data, err := h.m.Get(id, false)
+	_, sc, mm, err := h.m.Get(id)
 	if writeManagerError(w, err) {
 		return
 	}
-	cur := toV1(data)
-	curBytes, err := json.Marshal(cur)
+	curBytes, err := json.Marshal(sc)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, CodeInternal, "marshal current: "+err.Error(), nil)
 		return
@@ -113,16 +113,16 @@ func (h *ConfigsHandler) Patch(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusBadRequest, CodeBadRequest, "merge patch: "+err.Error(), nil)
 		return
 	}
-	var next config.ClientConfigV1
+	var next config.ServerConfigV1
 	if err := json.Unmarshal(merged, &next); err != nil {
 		WriteError(w, http.StatusBadRequest, CodeBadRequest, "decode merged: "+err.Error(), nil)
 		return
 	}
-	if err := h.m.Update(id, fromV1(&next)); writeManagerError(w, err) {
+	if err := h.m.Update(id, &next, mm); writeManagerError(w, err) {
 		return
 	}
-	snap, fresh, _ := h.m.Get(id, false)
-	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: toV1(fresh)})
+	snap, fresh, freshMM, _ := h.m.Get(id)
+	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: fresh, Frpsmgr: freshMM})
 }
 
 // Delete stops and removes an instance.
@@ -147,19 +147,18 @@ func (h *ConfigsHandler) Duplicate(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusBadRequest, CodeBadRequest, "new_id is required", nil)
 		return
 	}
-	_, data, err := h.m.Get(src, false)
+	_, sc, mm, err := h.m.Get(src)
 	if writeManagerError(w, err) {
 		return
 	}
-	copied := data.Copy(true)
-	if err := h.m.Create(body.NewID, copied); writeManagerError(w, err) {
+	if err := h.m.Create(body.NewID, sc, mm); writeManagerError(w, err) {
 		return
 	}
-	snap, fresh, _ := h.m.Get(body.NewID, false)
-	WriteJSON(w, http.StatusCreated, configEnvelope{Snapshot: snap, Config: toV1(fresh)})
+	snap, fresh, freshMM, _ := h.m.Get(body.NewID)
+	WriteJSON(w, http.StatusCreated, configEnvelope{Snapshot: snap, Config: fresh, Frpsmgr: freshMM})
 }
 
-// GetRaw returns the on-disk TOML/INI bytes verbatim.
+// GetRaw returns the on-disk TOML bytes verbatim.
 func (h *ConfigsHandler) GetRaw(w http.ResponseWriter, r *http.Request) {
 	id := pathID(r)
 	b, err := h.m.ReadRaw(id)
@@ -170,9 +169,7 @@ func (h *ConfigsHandler) GetRaw(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(b)
 }
 
-// PutRaw accepts a raw config body (TOML or legacy INI) and replaces the
-// file on disk. The request must use Content-Type application/toml or
-// text/plain.
+// PutRaw accepts a raw frps TOML body and replaces the file on disk.
 func (h *ConfigsHandler) PutRaw(w http.ResponseWriter, r *http.Request) {
 	id := pathID(r)
 	body, err := io.ReadAll(io.LimitReader(r.Body, 4<<20))
@@ -183,8 +180,8 @@ func (h *ConfigsHandler) PutRaw(w http.ResponseWriter, r *http.Request) {
 	if err := h.m.WriteRaw(id, body); writeManagerError(w, err) {
 		return
 	}
-	snap, fresh, _ := h.m.Get(id, false)
-	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: toV1(fresh)})
+	snap, sc, mm, _ := h.m.Get(id)
+	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: sc, Frpsmgr: mm})
 }
 
 // Reorder persists the user's chosen display order.

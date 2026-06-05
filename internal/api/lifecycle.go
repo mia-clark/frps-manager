@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/mia-clark/frp-manager-server/internal/manager"
+	"github.com/mia-clark/frps-manager/internal/manager"
 )
 
 // LifecycleHandler serves start/stop/reload endpoints.
@@ -51,7 +51,7 @@ func (h *LifecycleHandler) Reload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *LifecycleHandler) writeStatus(w http.ResponseWriter, id string) {
-	snap, _, err := h.m.Get(id, false)
+	snap, _, _, err := h.m.Get(id)
 	if err != nil {
 		WriteError(w, http.StatusInternalServerError, CodeInternal, err.Error(), nil)
 		return
@@ -61,6 +61,6 @@ func (h *LifecycleHandler) writeStatus(w http.ResponseWriter, id string) {
 
 // statusOf is the helper used by other packages.
 func statusOf(m *manager.Manager, id string) (manager.Snapshot, error) {
-	snap, _, err := m.Get(id, true)
+	snap, _, _, err := m.Get(id)
 	return snap, err
 }

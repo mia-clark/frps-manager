@@ -35,7 +35,7 @@ interface VersionResp {
   build_date?: string;
 }
 
-const APP_REPO = 'https://github.com/mia-clark/frp-manager-server';
+const APP_REPO = 'https://github.com/mia-clark/frps-manager';
 
 const Settings: React.FC = () => {
   const { token } = antdTheme.useToken();
@@ -43,7 +43,7 @@ const Settings: React.FC = () => {
   const { mode, setMode, resolved } = useTheme();
 
   const [autoCollapse, setAutoCollapse] = useState<boolean>(
-    () => localStorage.getItem('frpmgr_sidebar_collapse') === '1'
+    () => localStorage.getItem('frpsmgr_sidebar_collapse') === '1'
   );
   const [version, setVersion] = useState<VersionResp>({});
   const tokenMasked = (() => {
@@ -73,7 +73,7 @@ const Settings: React.FC = () => {
 
   const onToggleSidebar = (v: boolean) => {
     setAutoCollapse(v);
-    localStorage.setItem('frpmgr_sidebar_collapse', v ? '1' : '0');
+    localStorage.setItem('frpsmgr_sidebar_collapse', v ? '1' : '0');
     message.success('已保存，下次刷新生效');
   };
 
@@ -191,7 +191,7 @@ const Settings: React.FC = () => {
               </Button>
             </Space>
             <Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0, fontSize: 12 }}>
-              本控制台是 frpmgr 1.26.1 Windows 桌面版功能向 Web 端的完整迁移与扩展，自带多实例管理、可视化规则编辑、TOML 直编、事件流和宿主机监控。
+              本控制台是 frpsmgr 1.26.1 Windows 桌面版功能向 Web 端的完整迁移与扩展，自带多实例管理、可视化规则编辑、TOML 直编、事件流和宿主机监控。
             </Paragraph>
           </Card>
         </Col>

@@ -3,6 +3,7 @@ import { Layout, Menu, Button, Space, Typography, Modal, Tag, Tooltip, theme as 
 import {
   DashboardOutlined,
   ClusterOutlined,
+  MonitorOutlined,
   FileTextOutlined,
   HddOutlined,
   ToolOutlined,
@@ -10,8 +11,9 @@ import {
   SwapOutlined,
   PoweroffOutlined,
   SafetyCertificateOutlined,
-  ApiOutlined,
   BookOutlined,
+  LineChartOutlined,
+  BellOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
@@ -86,7 +88,10 @@ const MainLayout: React.FC = () => {
         type: 'group',
         label: '运行',
         children: [
-          { key: '/configs', icon: <ClusterOutlined />, label: 'FRPC 实例' },
+          { key: '/configs', icon: <ClusterOutlined />, label: 'FRPS 实例' },
+          { key: '/runtime', icon: <MonitorOutlined />, label: '运行时监控' },
+          { key: '/traffic', icon: <LineChartOutlined />, label: '历史流量' },
+          { key: '/alerts', icon: <BellOutlined />, label: '告警' },
           { key: '/logs', icon: <FileTextOutlined />, label: '日志流' },
         ],
       },
@@ -102,7 +107,6 @@ const MainLayout: React.FC = () => {
         label: '工具',
         children: [
           { key: '/tools/validate', icon: <ToolOutlined />, label: '配置校验' },
-          { key: '/tools/nat', icon: <ApiOutlined />, label: 'NAT 探测' },
           { key: '/tools/reference', icon: <BookOutlined />, label: 'TOML 参考' },
           { key: '/import-export', icon: <SwapOutlined />, label: '导入 / 导出' },
         ],
@@ -120,7 +124,7 @@ const MainLayout: React.FC = () => {
   // 根据 path 选中：取首段或两段做匹配
   const selectedKey = useMemo(() => {
     const p = location.pathname;
-    const candidates = ['/tools/validate', '/tools/nat', '/tools/reference', '/import-export'];
+    const candidates = ['/tools/validate', '/tools/reference', '/import-export'];
     for (const c of candidates) if (p.startsWith(c)) return c;
     const seg = '/' + p.split('/').filter(Boolean)[0];
     return seg || '/dashboard';

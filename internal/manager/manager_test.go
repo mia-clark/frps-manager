@@ -6,235 +6,128 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mia-clark/frp-manager-server/internal/eventbus"
-	"github.com/mia-clark/frp-manager-server/pkg/config"
+	"github.com/mia-clark/frps-manager/internal/eventbus"
+	"github.com/mia-clark/frps-manager/pkg/config"
 )
 
-// TestWriteConfig_UsesCombinedLogFile: 每个 instance 的 toml 写出后，
-// LogFile 字段应统一指向 LogsDir/frpc.log，而不是 per-id 的 <id>.log。
-func TestWriteConfig_UsesCombinedLogFile(t *testing.T) {
+func newMgr(t *testing.T) (*Manager, string) {
+	t.Helper()
 	tmp := t.TempDir()
-	logsDir := filepath.Join(tmp, "logs")
-	profilesDir := filepath.Join(tmp, "profiles")
-	storesDir := filepath.Join(tmp, "stores")
-	for _, d := range []string{logsDir, profilesDir, storesDir} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatalf("mkdir: %v", err)
-		}
-	}
-
-	m := &Manager{opts: Options{
-		LogsDir:     logsDir,
-		ProfilesDir: profilesDir,
-		StoresDir:   storesDir,
-	}}
-
-	cfgPath := filepath.Join(profilesDir, "abc.toml")
-	if err := os.WriteFile(cfgPath, []byte(`serverAddr="127.0.0.1"
-serverPort=7000
-`), 0o644); err != nil {
-		t.Fatalf("seed toml: %v", err)
-	}
-
-	data, err := config.UnmarshalClientConf(cfgPath)
-	if err != nil {
-		t.Fatalf("UnmarshalClientConf: %v", err)
-	}
-	if err := m.writeConfig(cfgPath, data); err != nil {
-		t.Fatalf("writeConfig: %v", err)
-	}
-
-	// Parse the written TOML back and verify LogFile points exactly at the combined path.
-	parsed, err := config.UnmarshalClientConf(cfgPath)
-	if err != nil {
-		t.Fatalf("re-parse: %v", err)
-	}
-	want := filepath.ToSlash(filepath.Join(logsDir, "frpc.log"))
-	if parsed.LogFile != want {
-		t.Fatalf("expected LogFile=%q, got %q", want, parsed.LogFile)
-	}
-}
-
-// TestMigratePaths_RewritesLegacyLogFile: v1.2.22 之前写的 toml 里 log.to 还
-// 指向 per-id <id>.log。MigratePaths 应把它重写为 combined log 路径。
-func TestMigratePaths_RewritesLegacyLogFile(t *testing.T) {
-	tmp := t.TempDir()
-	logsDir := filepath.Join(tmp, "logs")
-	profilesDir := filepath.Join(tmp, "profiles")
-	storesDir := filepath.Join(tmp, "stores")
-	metaPath := filepath.Join(tmp, "meta.json")
-	for _, d := range []string{logsDir, profilesDir, storesDir} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatalf("mkdir: %v", err)
-		}
-	}
-
-	// 模拟 v1.2.22 写下的 toml：log.to 指向 per-id 路径
-	legacyLogPath := filepath.ToSlash(filepath.Join(logsDir, "dt_116_frps.log"))
-	cfgPath := filepath.Join(profilesDir, "dt_116_frps.toml")
-	legacyBody := `serverAddr = "127.0.0.1"
-serverPort = 7000
-loginFailExit = false
-
-[log]
-to = "` + legacyLogPath + `"
-level = "info"
-maxDays = 3
-`
-	if err := os.WriteFile(cfgPath, []byte(legacyBody), 0o644); err != nil {
-		t.Fatalf("seed legacy toml: %v", err)
-	}
-
-	silentLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	m, err := New(Options{
-		LogsDir:     logsDir,
-		ProfilesDir: profilesDir,
-		StoresDir:   storesDir,
-		MetaPath:    metaPath,
-		Logger:      silentLogger,
+	opts := Options{
+		ProfilesDir: filepath.Join(tmp, "profiles"),
+		LogsDir:     filepath.Join(tmp, "logs"),
+		StoresDir:   filepath.Join(tmp, "stores"),
+		MetaPath:    filepath.Join(tmp, "meta.json"),
+		Logger:      slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
 		Bus:         eventbus.New(16),
-	})
-	if err != nil {
-		t.Fatalf("manager.New: %v", err)
 	}
-	if err := m.LoadAll(); err != nil {
-		t.Fatalf("LoadAll: %v", err)
+	for _, d := range []string{opts.ProfilesDir, opts.LogsDir, opts.StoresDir} {
+		_ = os.MkdirAll(d, 0o755)
+	}
+	m, err := New(opts)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return m, tmp
+}
+
+func serverCfg(t *testing.T, bindPort int) *config.ServerConfigV1 {
+	t.Helper()
+	sc, err := config.ParseServerTOML([]byte("bindPort = 7000\n"))
+	if err != nil {
+		t.Fatalf("ParseServerTOML: %v", err)
+	}
+	sc.BindPort = bindPort
+	return sc
+}
+
+// TestCreateGetRoundTrip: Create 写盘后，Get 能读回 bindPort 与 frpsmgr 元数据。
+func TestCreateGetRoundTrip(t *testing.T) {
+	m, _ := newMgr(t)
+	if err := m.Create("main", serverCfg(t, 7001), MgrMeta{Name: "主服务端", ManualStart: true}); err != nil {
+		t.Fatalf("Create: %v", err)
 	}
 
-	// 迁移前确认确实读到的是旧路径
-	pre, err := config.UnmarshalClientConf(cfgPath)
+	snap, sc, mm, err := m.Get("main")
 	if err != nil {
-		t.Fatalf("re-parse before: %v", err)
+		t.Fatalf("Get: %v", err)
 	}
-	if pre.LogFile != legacyLogPath {
-		t.Fatalf("setup invariant broken: pre LogFile=%q want %q", pre.LogFile, legacyLogPath)
+	if sc.BindPort != 7001 {
+		t.Fatalf("BindPort = %d, want 7001", sc.BindPort)
 	}
-
-	// 执行迁移
-	m.MigratePaths()
-
-	// 迁移后 toml 文件里 log.to 应指向 combined log
-	post, err := config.UnmarshalClientConf(cfgPath)
-	if err != nil {
-		t.Fatalf("re-parse after: %v", err)
+	if mm.Name != "主服务端" || !mm.ManualStart {
+		t.Fatalf("frpsmgr meta lost: %+v", mm)
 	}
-	want := filepath.ToSlash(filepath.Join(logsDir, "frpc.log"))
-	if post.LogFile != want {
-		t.Fatalf("expected migrated LogFile=%q, got %q", want, post.LogFile)
+	if snap.Name != "主服务端" {
+		t.Fatalf("snapshot name = %q, want 主服务端", snap.Name)
+	}
+	if snap.State != "stopped" {
+		t.Fatalf("fresh instance state = %q, want stopped", snap.State)
 	}
 }
 
-// TestMigratePaths_NoOpWhenAlreadyCombined: 已经是 frpc.log 的 toml 不应被
-// 重写（避免无谓的文件写）。
-func TestMigratePaths_NoOpWhenAlreadyCombined(t *testing.T) {
-	tmp := t.TempDir()
-	logsDir := filepath.Join(tmp, "logs")
-	profilesDir := filepath.Join(tmp, "profiles")
-	storesDir := filepath.Join(tmp, "stores")
-	metaPath := filepath.Join(tmp, "meta.json")
-	for _, d := range []string{logsDir, profilesDir, storesDir} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatalf("mkdir: %v", err)
-		}
+// TestCreateDuplicateRejected: 同 id 重复创建返回 ErrExists。
+func TestCreateDuplicateRejected(t *testing.T) {
+	m, _ := newMgr(t)
+	if err := m.Create("dup", serverCfg(t, 7000), MgrMeta{}); err != nil {
+		t.Fatalf("Create: %v", err)
 	}
-
-	combinedPath := filepath.ToSlash(filepath.Join(logsDir, "frpc.log"))
-	cfgPath := filepath.Join(profilesDir, "already.toml")
-	body := `serverAddr = "127.0.0.1"
-serverPort = 7000
-
-[log]
-to = "` + combinedPath + `"
-level = "info"
-`
-	if err := os.WriteFile(cfgPath, []byte(body), 0o644); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	mtimeBefore, err := os.Stat(cfgPath)
-	if err != nil {
-		t.Fatalf("stat: %v", err)
-	}
-
-	silentLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	m, err := New(Options{
-		LogsDir: logsDir, ProfilesDir: profilesDir, StoresDir: storesDir,
-		MetaPath: metaPath, Logger: silentLogger, Bus: eventbus.New(16),
-	})
-	if err != nil {
-		t.Fatalf("manager.New: %v", err)
-	}
-	if err := m.LoadAll(); err != nil {
-		t.Fatalf("LoadAll: %v", err)
-	}
-
-	m.MigratePaths()
-
-	mtimeAfter, err := os.Stat(cfgPath)
-	if err != nil {
-		t.Fatalf("stat after: %v", err)
-	}
-	if !mtimeAfter.ModTime().Equal(mtimeBefore.ModTime()) {
-		t.Fatalf("expected no rewrite when already combined, but mtime changed: %v -> %v",
-			mtimeBefore.ModTime(), mtimeAfter.ModTime())
+	if err := m.Create("dup", serverCfg(t, 7000), MgrMeta{}); err != ErrExists {
+		t.Fatalf("expected ErrExists, got %v", err)
 	}
 }
 
-// TestMigratePaths_SkipsConsoleAndEmpty: log.to 设为 console 或留空时
-// 表示用户显式禁止文件日志, 不应被覆盖为 frpc.log。
-func TestMigratePaths_SkipsConsoleAndEmpty(t *testing.T) {
-	tmp := t.TempDir()
-	logsDir := filepath.Join(tmp, "logs")
-	profilesDir := filepath.Join(tmp, "profiles")
-	storesDir := filepath.Join(tmp, "stores")
-	metaPath := filepath.Join(tmp, "meta.json")
-	for _, d := range []string{logsDir, profilesDir, storesDir} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
-			t.Fatalf("mkdir: %v", err)
+// TestDeleteRemovesFileAndMeta: Delete 后文件消失、Get 404、meta 不再含该 id。
+func TestDeleteRemovesFileAndMeta(t *testing.T) {
+	m, tmp := newMgr(t)
+	if err := m.Create("gone", serverCfg(t, 7000), MgrMeta{Name: "n"}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	path := filepath.Join(tmp, "profiles", "gone.toml")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("file should exist: %v", err)
+	}
+	if err := m.Delete("gone"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("file should be gone, stat err=%v", err)
+	}
+	if _, _, _, err := m.Get("gone"); err != ErrNotFound {
+		t.Fatalf("expected ErrNotFound after delete, got %v", err)
+	}
+	if m.meta.name("gone") != "" {
+		t.Fatalf("meta name not dropped")
+	}
+}
+
+// TestListReflectsCreateAndReorder: List 返回创建的实例并尊重 Reorder 顺序。
+func TestListReflectsCreateAndReorder(t *testing.T) {
+	m, _ := newMgr(t)
+	for _, id := range []string{"a", "b", "c"} {
+		if err := m.Create(id, serverCfg(t, 7000), MgrMeta{Name: id}); err != nil {
+			t.Fatalf("Create %s: %v", id, err)
 		}
 	}
-
-	cases := []struct {
-		id   string
-		body string
-	}{
-		{"console_only", `serverAddr = "127.0.0.1"
-serverPort = 7000
-
-[log]
-to = "console"
-`},
+	if err := m.Reorder([]string{"c", "a", "b"}); err != nil {
+		t.Fatalf("Reorder: %v", err)
 	}
-	for _, c := range cases {
-		p := filepath.Join(profilesDir, c.id+".toml")
-		if err := os.WriteFile(p, []byte(c.body), 0o644); err != nil {
-			t.Fatalf("seed %s: %v", c.id, err)
-		}
+	list := m.List()
+	if len(list) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(list))
 	}
-
-	silentLogger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	m, err := New(Options{
-		LogsDir: logsDir, ProfilesDir: profilesDir, StoresDir: storesDir,
-		MetaPath: metaPath, Logger: silentLogger, Bus: eventbus.New(16),
-	})
-	if err != nil {
-		t.Fatalf("manager.New: %v", err)
+	if list[0].ID != "c" || list[1].ID != "a" || list[2].ID != "b" {
+		t.Fatalf("reorder not honored: %s,%s,%s", list[0].ID, list[1].ID, list[2].ID)
 	}
-	if err := m.LoadAll(); err != nil {
-		t.Fatalf("LoadAll: %v", err)
+}
+
+// TestWriteRawRejectsGarbage: WriteRaw 对非法 TOML 返回 parse 错误。
+func TestWriteRawRejectsGarbage(t *testing.T) {
+	m, _ := newMgr(t)
+	if err := m.Create("x", serverCfg(t, 7000), MgrMeta{}); err != nil {
+		t.Fatalf("Create: %v", err)
 	}
-
-	m.MigratePaths()
-
-	for _, c := range cases {
-		p := filepath.Join(profilesDir, c.id+".toml")
-		got, err := config.UnmarshalClientConf(p)
-		if err != nil {
-			t.Fatalf("re-parse %s: %v", c.id, err)
-		}
-		// 期望仍然不是 frpc.log（console 保留，或被 frp 默认值替换，但绝不能是 frpc.log）
-		combined := filepath.ToSlash(filepath.Join(logsDir, "frpc.log"))
-		if got.LogFile == combined {
-			t.Fatalf("%s: console-mode toml was wrongly migrated to combined log", c.id)
-		}
+	if err := m.WriteRaw("x", []byte("this is = = not valid toml ===")); err == nil {
+		t.Fatalf("expected parse error for garbage TOML")
 	}
 }

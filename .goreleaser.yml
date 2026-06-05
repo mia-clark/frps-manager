@@ -1,23 +1,23 @@
 version: 2
 
-project_name: frpmgrd
+project_name: frpsmgrd
 
 before:
   hooks:
     - go mod tidy
 
 builds:
-  - id: frpmgrd
-    main: ./cmd/frpmgrd
-    binary: frpmgrd
+  - id: frpsmgrd
+    main: ./cmd/frpsmgrd
+    binary: frpsmgrd
     env:
       - CGO_ENABLED=0
     flags:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/mia-clark/frp-manager-server/pkg/version.Number={{.Version}}
-      - -X github.com/mia-clark/frp-manager-server/pkg/version.BuildDate={{.Date}}
+      - -X github.com/mia-clark/frps-manager/pkg/version.Number={{.Version}}
+      - -X github.com/mia-clark/frps-manager/pkg/version.BuildDate={{.Date}}
     # 显式目标清单（对标 frp 官方全平台）。稀疏矩阵用 targets 比 goos×goarch+ignore 清晰。
     # arm 用 goarm 后缀（v6/v7 两个变体）；mips/mipsle 走 softfloat（软路由多无 FPU），
     # mips64/mips64le 走 hardfloat；amd64/arm64/386/riscv64 用各自默认微架构（无需后缀）。
@@ -93,11 +93,11 @@ release:
     owner: mia-clark
     name: frp-manager-server
   header: |
-    ## frpmgrd {{ .Tag }}
+    ## frpsmgrd {{ .Tag }}
 
-    Built from [`{{ .ShortCommit }}`](https://github.com/mia-clark/frp-manager-server/commit/{{ .FullCommit }}).
+    Built from [`{{ .ShortCommit }}`](https://github.com/mia-clark/frps-manager/commit/{{ .FullCommit }}).
   footer: |
     ---
 
     Container image: `ghcr.io/mia-clark/frp-manager-server:{{ .Version }}`
-    See [`docs/README-server.md`](https://github.com/mia-clark/frp-manager-server/blob/main/docs/README-server.md) for deployment.
+    See [`docs/README-server.md`](https://github.com/mia-clark/frps-manager/blob/main/docs/README-server.md) for deployment.

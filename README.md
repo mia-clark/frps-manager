@@ -1,11 +1,11 @@
-# frpmgr-server（frpmgrd）
+# frps-manager（frpsmgrd）
 
 > 一个用浏览器就能管理多条 frp 内网穿透隧道的「FRP 客户端管理器」。
 > 一个进程同时跑多个 `frpc`，自带 **Web 管理界面** + 完整 **API**，开机自启、热重载，专为服务器/Docker 设计。
 
 简单说：你不用再手动写一堆 `frpc.toml`、再用 `systemctl` 一个个管理了。装上它，打开网页，点点鼠标就能新增/启动/停止/查看日志/监控你的所有穿透隧道。
 
-> 本项目从 Windows 桌面版 [frpmgr](https://github.com/mia-clark/frp-manager-server) 演化而来，去掉了 Windows GUI，保留了配置模型、热重载和内嵌 frpc 的能力，改造成 Linux/服务器友好的服务。内置 frp `v0.69.1`。
+> 本项目从 Windows 桌面版 [frpsmgr](https://github.com/mia-clark/frps-manager) 演化而来，去掉了 Windows GUI，保留了配置模型、热重载和内嵌 frpc 的能力，改造成 Linux/服务器友好的服务。内置 frp `v0.69.1`。
 
 ---
 
@@ -109,7 +109,7 @@ curl -fsSL https://raw.githubusercontent.com/mia-clark/frp-manager-server/main/s
 | `--uninstall` | 卸载 |
 | `-h, --help` | 查看帮助 |
 
-> 参数可任意组合，已传入的项就不再交互询问。也支持环境变量：`FRPMGR_PORT=9000 FRPMGR_API_TOKEN=xxx ASSUME_YES=1`。
+> 参数可任意组合，已传入的项就不再交互询问。也支持环境变量：`FRPSMGR_PORT=9000 FRPSMGR_API_TOKEN=xxx ASSUME_YES=1`。
 
 ### 🔄 全自动更新与定时更新
 
@@ -127,7 +127,7 @@ curl -fsSL https://gh-raw.966788.xyz/frp-mgr/install.sh | sh -s -- --update --fo
 想无人值守自动更新？丢进 `crontab`，例如每天凌晨 4 点：
 
 ```sh
-0 4 * * * curl -fsSL https://gh-raw.966788.xyz/frp-mgr/install.sh | sh -s -- --update >> /var/log/frpmgrd-update.log 2>&1
+0 4 * * * curl -fsSL https://gh-raw.966788.xyz/frp-mgr/install.sh | sh -s -- --update >> /var/log/frpsmgrd-update.log 2>&1
 ```
 
 ### 卸载
@@ -147,7 +147,7 @@ curl -fsSL https://gh-raw.966788.xyz/frp-mgr/install.sh | sh -s -- --uninstall
 | macOS | launchd | ✅ |
 | 其它（无 systemd/OpenRC） | 打印手动后台运行命令 | 需手动 |
 
-> CPU 架构自动识别：`amd64` / `arm64` / `armv7`（树莓派等）。Windows 用户请用下面的 Docker 方式，或到 [Releases](https://github.com/mia-clark/frp-manager-server/releases) 下载 Windows 版手动运行。
+> CPU 架构自动识别：`amd64` / `arm64` / `armv7`（树莓派等）。Windows 用户请用下面的 Docker 方式，或到 [Releases](https://github.com/mia-clark/frps-manager/releases) 下载 Windows 版手动运行。
 
 ---
 
@@ -156,8 +156,8 @@ curl -fsSL https://gh-raw.966788.xyz/frp-mgr/install.sh | sh -s -- --uninstall
 ### 方式一：Docker（推荐用于服务器）
 
 ```bash
-docker run -d --name frpmgrd --network host \
-  -e FRPMGR_API_TOKEN="$(openssl rand -hex 32)" \
+docker run -d --name frpsmgrd --network host \
+  -e FRPSMGR_API_TOKEN="$(openssl rand -hex 32)" \
   -v $(pwd)/data:/data \
   ghcr.io/mia-clark/frp-manager-server:latest
 ```
@@ -172,16 +172,16 @@ docker run -d --name frpmgrd --network host \
 curl -O https://raw.githubusercontent.com/mia-clark/frp-manager-server/main/deploy/docker-compose.standalone.yml
 curl -O https://raw.githubusercontent.com/mia-clark/frp-manager-server/main/deploy/.env.example
 mv .env.example .env
-# 编辑 .env，至少把 FRPMGR_API_TOKEN 设成一个真实令牌
+# 编辑 .env，至少把 FRPSMGR_API_TOKEN 设成一个真实令牌
 docker compose -f docker-compose.standalone.yml up -d
 ```
 
 ### 方式三：手动下载二进制
 
-到 [Releases](https://github.com/mia-clark/frp-manager-server/releases) 下载对应平台的压缩包（Linux amd64/arm64/armv7、macOS amd64/arm64、Windows amd64/arm64），解压后：
+到 [Releases](https://github.com/mia-clark/frps-manager/releases) 下载对应平台的压缩包（Linux amd64/arm64/armv7、macOS amd64/arm64、Windows amd64/arm64），解压后：
 
 ```bash
-FRPMGR_API_TOKEN=$(openssl rand -hex 32) ./frpmgrd serve
+FRPSMGR_API_TOKEN=$(openssl rand -hex 32) ./frpsmgrd serve
 ```
 
 ---
@@ -218,7 +218,7 @@ fms help         # 查看全部命令
 
 > Windows 同样提供 `fms`（在 PowerShell 或 cmd 中执行；安装目录已加入系统 PATH，新开终端生效）。
 >
-> 仍想用原生命令也行：systemd 用 `systemctl status frpmgrd` / `journalctl -u frpmgrd -f`；macOS 用 `sudo launchctl list | grep frpmgrd`；Windows 用 `services.msc`。
+> 仍想用原生命令也行：systemd 用 `systemctl status frpsmgrd` / `journalctl -u frpsmgrd -f`；macOS 用 `sudo launchctl list | grep frpsmgrd`；Windows 用 `services.msc`。
 
 ---
 
@@ -226,19 +226,19 @@ fms help         # 查看全部命令
 
 一键安装后，配置写在环境变量文件里（systemd 服务读取它）：
 
-- **Linux**：`/etc/frpmgrd/frpmgrd.env`（数据目录 `/var/lib/frpmgrd`）
-- **macOS**：配置写在 launchd plist 里（数据目录 `/usr/local/var/frpmgrd`）
+- **Linux**：`/etc/frpsmgrd/frpsmgrd.env`（数据目录 `/var/lib/frpsmgrd`）
+- **macOS**：配置写在 launchd plist 里（数据目录 `/usr/local/var/frpsmgrd`）
 
-改完配置后执行 `fms restart` 生效（等价于 `systemctl restart frpmgrd`）。可用的环境变量：
+改完配置后执行 `fms restart` 生效（等价于 `systemctl restart frpsmgrd`）。可用的环境变量：
 
 | 变量 | 必填 | 默认 | 说明 |
 |---|---|:---:|---|
-| `FRPMGR_API_TOKEN` | ✓ | — | API 鉴权令牌（登录后台的凭证） |
-| `FRPMGR_HTTP_ADDR` |   | `:8080` | 监听地址，格式 `:端口` |
-| `FRPMGR_DATA_DIR`  |   | `/data` | 数据根目录 |
-| `FRPMGR_CORS_ORIGINS` |   | `*` | 逗号分隔的 CORS 白名单 |
-| `FRPMGR_LOG_LEVEL` |   | `info` | `trace`/`debug`/`info`/`warn`/`error` |
-| `FRPMGR_DOCS_ENABLED` |   | `true` | 是否开放 `/api/docs` 在线文档 |
+| `FRPSMGR_API_TOKEN` | ✓ | — | API 鉴权令牌（登录后台的凭证） |
+| `FRPSMGR_HTTP_ADDR` |   | `:8080` | 监听地址，格式 `:端口` |
+| `FRPSMGR_DATA_DIR`  |   | `/data` | 数据根目录 |
+| `FRPSMGR_CORS_ORIGINS` |   | `*` | 逗号分隔的 CORS 白名单 |
+| `FRPSMGR_LOG_LEVEL` |   | `info` | `trace`/`debug`/`info`/`warn`/`error` |
+| `FRPSMGR_DOCS_ENABLED` |   | `true` | 是否开放 `/api/docs` 在线文档 |
 
 ### 数据目录结构
 
@@ -256,8 +256,8 @@ fms help         # 查看全部命令
 
 ## ❓ 常见问题
 
-- **打开网页提示 401 / 未授权？** 令牌填错了。核对 `/etc/frpmgrd/frpmgrd.env` 里的 `FRPMGR_API_TOKEN`。
-- **服务起不来 / 端口被占用？** 换个端口：改 `FRPMGR_HTTP_ADDR=:新端口` 后重启服务；或重装时用 `-p` 指定。
+- **打开网页提示 401 / 未授权？** 令牌填错了。核对 `/etc/frpsmgrd/frpsmgrd.env` 里的 `FRPSMGR_API_TOKEN`。
+- **服务起不来 / 端口被占用？** 换个端口：改 `FRPSMGR_HTTP_ADDR=:新端口` 后重启服务；或重装时用 `-p` 指定。
 - **隧道显示已启动但连不上 frps？** 多半是 frps 地址/端口/令牌不对。在 Web 界面看该隧道的实时日志排查。
 - **公网访问不了后台？** 检查服务器防火墙/安全组是否放行了你设置的端口。
 - **想换成开机不自启？** 直接 `fms disable` 即可（跨平台通用）。
@@ -271,7 +271,7 @@ fms help         # 查看全部命令
 ```bash
 make run            # 本地直接运行（主机模式）
 make test           # 跑单元测试
-make build          # 交叉编译 Linux 静态二进制 -> bin/frpmgrd
+make build          # 交叉编译 Linux 静态二进制 -> bin/frpsmgrd
 make build-host     # 编译当前平台二进制（本地开发用）
 make docker         # 用 deploy/Dockerfile 构建镜像
 ```
@@ -279,7 +279,7 @@ make docker         # 用 deploy/Dockerfile 构建镜像
 ### 目录结构
 
 ```
-cmd/frpmgrd/        # 守护进程入口
+cmd/frpsmgrd/        # 守护进程入口
 internal/api/       # HTTP + WebSocket 接口、中间件（含内嵌 Web 界面）
 internal/manager/   # 实例注册表 + 生命周期管理
 internal/eventbus/  # 进程内事件发布订阅（用于 WS 推送）

@@ -27,7 +27,7 @@ type Fixtures = {
  *
  * 每个 worker 启动时:
  *   1. 创建独立 TempDir
- *   2. 起一个 frpmgrd 子进程, 监听 :18080+workerIndex
+ *   2. 起一个 frpsmgrd 子进程, 监听 :18080+workerIndex
  *   3. 轮询 GET /api/v1/version 直到 200 (max 5s)
  *   4. 测试运行
  *   5. 结束时 kill daemon, 全绿就删 TempDir, 否则保留
@@ -35,10 +35,10 @@ type Fixtures = {
 export const test = base.extend<{}, Fixtures>({
   daemon: [
     async ({}, use, workerInfo) => {
-      const bin = process.env.FRPMGRD_BIN;
+      const bin = process.env.FRPSMGRD_BIN;
       if (!bin || !existsSync(bin)) {
         throw new Error(
-          `FRPMGRD_BIN not set or not exists (${bin}). globalSetup should have set it.`,
+          `FRPSMGRD_BIN not set or not exists (${bin}). globalSetup should have set it.`,
         );
       }
 
@@ -52,10 +52,10 @@ export const test = base.extend<{}, Fixtures>({
       const proc: ChildProcess = spawn(bin, ['serve'], {
         env: {
           ...process.env,
-          FRPMGR_API_TOKEN: token,
-          FRPMGR_HTTP_ADDR: `:${port}`,
-          FRPMGR_DATA_DIR: dataDir,
-          FRPMGR_LOG_LEVEL: 'info',
+          FRPSMGR_API_TOKEN: token,
+          FRPSMGR_HTTP_ADDR: `:${port}`,
+          FRPSMGR_DATA_DIR: dataDir,
+          FRPSMGR_LOG_LEVEL: 'info',
         },
         stdio: ['ignore', 'pipe', 'pipe'],
       });

@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mia-clark/frp-manager-server/internal/manager"
+	"github.com/mia-clark/frps-manager/internal/manager"
 )
 
 // pathID returns the chi URL param "id" or empty string.
@@ -45,7 +45,15 @@ func writeManagerError(w http.ResponseWriter, err error) bool {
 	case errors.Is(err, manager.ErrExists):
 		WriteError(w, http.StatusConflict, CodeConfigExists, err.Error(), nil)
 	default:
-		WriteError(w, http.StatusBadRequest, CodeBadRequest, err.Error(), nil)
+		// State-machine violations ("already running" / "not running") are
+		// 409 Conflict — the resource exists but its current state forbids
+		// the requested transition.
+		msg := err.Error()
+		if msg == "already running" || msg == "not running" {
+			WriteError(w, http.StatusConflict, CodeInvalidState, msg, nil)
+		} else {
+			WriteError(w, http.StatusBadRequest, CodeBadRequest, msg, nil)
+		}
 	}
 	return true
 }

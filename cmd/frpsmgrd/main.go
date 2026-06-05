@@ -9,15 +9,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
-	"github.com/mia-clark/frp-manager-server/internal/api"
-	"github.com/mia-clark/frp-manager-server/internal/appcfg"
-	"github.com/mia-clark/frp-manager-server/internal/eventbus"
-	"github.com/mia-clark/frp-manager-server/internal/manager"
-	"github.com/mia-clark/frp-manager-server/pkg/version"
+	"github.com/mia-clark/frps-manager/internal/api"
+	"github.com/mia-clark/frps-manager/internal/appcfg"
+	"github.com/mia-clark/frps-manager/internal/eventbus"
+	"github.com/mia-clark/frps-manager/internal/manager"
+	"github.com/mia-clark/frps-manager/internal/metrics"
+	"github.com/mia-clark/frps-manager/pkg/version"
 )
 
 func main() {
@@ -28,10 +30,12 @@ func main() {
 	switch os.Args[1] {
 	case "serve":
 		os.Exit(runServe(os.Args[2:]))
+	case "frps-worker":
+		os.Exit(runFrpsWorker(os.Args[2:]))
 	case "health":
 		os.Exit(runHealth(os.Args[2:]))
 	case "version", "-v", "--version":
-		fmt.Printf("frpmgrd %s (frp %s, built %s)\n", version.Number, version.FRPVersion, version.BuildDate)
+		fmt.Printf("frpsmgrd %s (frp %s, built %s)\n", version.Number, version.FRPVersion, version.BuildDate)
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -42,10 +46,10 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, `frpmgrd — headless FRP client manager daemon
+	fmt.Fprintln(os.Stderr, `frpsmgrd — headless FRP client manager daemon
 
 USAGE
-  frpmgrd <command> [flags]
+  frpsmgrd <command> [flags]
 
 COMMANDS
   serve     Run the HTTP API server (default for containers)
@@ -54,12 +58,12 @@ COMMANDS
   help      Show this help
 
 ENV
-  FRPMGR_API_TOKEN       Required. Bearer token for API auth.
-  FRPMGR_HTTP_ADDR       Listen address (default ":8080")
-  FRPMGR_DATA_DIR        Data root (default "/data")
-  FRPMGR_CORS_ORIGINS    Comma-separated origins or "*" (default "*")
-  FRPMGR_LOG_LEVEL       trace|debug|info|warn|error (default "info")
-  FRPMGR_DOCS_ENABLED    Expose /api/docs Scalar UI (default "true")`)
+  FRPSMGR_API_TOKEN       Required. Bearer token for API auth.
+  FRPSMGR_HTTP_ADDR       Listen address (default ":8080")
+  FRPSMGR_DATA_DIR        Data root (default "/data")
+  FRPSMGR_CORS_ORIGINS    Comma-separated origins or "*" (default "*")
+  FRPSMGR_LOG_LEVEL       trace|debug|info|warn|error (default "info")
+  FRPSMGR_DOCS_ENABLED    Expose /api/docs Scalar UI (default "true")`)
 }
 
 func runServe(args []string) int {
@@ -77,7 +81,7 @@ func runServe(args []string) int {
 	}
 
 	logger := newLogger(cfg.LogLevel)
-	logger.Info("starting frpmgrd",
+	logger.Info("starting frpsmgrd",
 		slog.String("addr", cfg.HTTPAddr),
 		slog.String("data_dir", cfg.DataDir),
 		slog.String("version", version.Number),
@@ -101,14 +105,24 @@ func runServe(args []string) int {
 		fmt.Fprintf(os.Stderr, "load configs: %v\n", err)
 		return 1
 	}
-	// 升级迁移：把 v1.2.22 及之前写下的 per-id .log 路径重写为 combined log
-	// 路径，否则旧 toml 启动的 frpc 仍按旧路径写日志，UI 读 combined 会空白。
-	mgr.MigratePaths()
-	mgr.ArmAllAutoDelete()
 	mgr.AutoStart()
 	defer mgr.Shutdown()
 
-	handler := api.NewRouter(api.Deps{Cfg: cfg, Logger: logger, Manager: mgr})
+	// 时序指标存储 + 采样器（P3）：纯 Go SQLite，落 $DataDir/metrics.db。
+	// 采样器经各 worker loopback 每 10s 读 frps mem 指标 → 落库 + 评估告警。
+	mstore, err := metrics.Open(filepath.Join(cfg.DataDir, "metrics.db"))
+	if err != nil {
+		logger.Warn("metrics store disabled", slog.Any("err", err))
+		mstore = nil
+	} else {
+		defer mstore.Close()
+		sampler := metrics.NewSampler(mstore, mgr, bus, logger, 10*time.Second, 7*24*time.Hour)
+		samplerCtx, cancelSampler := context.WithCancel(context.Background())
+		defer cancelSampler()
+		go sampler.Run(samplerCtx)
+	}
+
+	handler := api.NewRouter(api.Deps{Cfg: cfg, Logger: logger, Manager: mgr, Metrics: mstore})
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           handler,

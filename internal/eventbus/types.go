@@ -13,6 +13,7 @@ const (
 	TypeConfigChanged    EventType = "config.changed"
 	TypeConfigDeleted    EventType = "config.deleted"
 	TypeLogLine          EventType = "log.line"
+	TypeAlert            EventType = "alert"
 )
 
 // Event is a single message published on the bus. Data is the type-

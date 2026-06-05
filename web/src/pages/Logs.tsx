@@ -72,7 +72,7 @@ const Logs: React.FC = () => {
           }
           return {
             id: item.id,
-            name: item.name || item.frpmgr?.name || item.id,
+            name: item.name || item.frpsmgr?.name || item.id,
             status: state,
           };
         }));
@@ -250,7 +250,7 @@ const Logs: React.FC = () => {
             </pre>
           ) : (
             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Empty description="请先选择一个 FRPC 实例" />
+              <Empty description="请先选择一个 frps 实例" />
             </div>
           )}
         </div>

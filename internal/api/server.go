@@ -8,10 +8,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mia-clark/frp-manager-server/internal/api/middleware"
-	"github.com/mia-clark/frp-manager-server/internal/appcfg"
-	"github.com/mia-clark/frp-manager-server/internal/manager"
-	"github.com/mia-clark/frp-manager-server/web"
+	"github.com/mia-clark/frps-manager/internal/api/middleware"
+	"github.com/mia-clark/frps-manager/internal/appcfg"
+	"github.com/mia-clark/frps-manager/internal/manager"
+	"github.com/mia-clark/frps-manager/internal/metrics"
+	"github.com/mia-clark/frps-manager/web"
 )
 
 // Deps bundles the collaborators that handlers need.
@@ -19,6 +20,7 @@ type Deps struct {
 	Cfg     *appcfg.Config
 	Logger  *slog.Logger
 	Manager *manager.Manager
+	Metrics *metrics.Store // may be nil if metrics disabled
 }
 
 // NewRouter assembles the chi mux with all middleware and route groups
@@ -43,14 +45,14 @@ func NewRouter(d Deps) http.Handler {
 	}
 
 	configs := NewConfigsHandler(d.Manager, d.Logger)
-	proxies := NewProxiesHandler(d.Manager, d.Logger)
 	life := NewLifecycleHandler(d.Manager, d.Logger)
 	status := NewStatusHandler(d.Manager)
+	runtime := NewRuntimeHandler(d.Manager)
 	validate := NewValidateHandler()
 	events := NewEventsHandler(d.Manager, d.Logger, d.Cfg.CORSOrigins)
 	logs := NewLogsHandler(d.Manager, d.Cfg.LogsDir, d.Logger, d.Cfg.CORSOrigins)
 	imex := NewImportExportHandler(d.Manager, d.Logger)
-	nat := NewNatholeHandler()
+	mh := NewMetricsHandler(d.Metrics)
 
 	// Authenticated subtree.
 	r.Group(func(r chi.Router) {
@@ -68,17 +70,27 @@ func NewRouter(d Deps) http.Handler {
 		r.Get("/api/v1/configs/{id}/raw", configs.GetRaw)
 		r.Put("/api/v1/configs/{id}/raw", configs.PutRaw)
 
-		r.Get("/api/v1/configs/{id}/proxies", proxies.List)
-		r.Post("/api/v1/configs/{id}/proxies", proxies.Create)
-		r.Get("/api/v1/configs/{id}/proxies/{name}", proxies.Get)
-		r.Put("/api/v1/configs/{id}/proxies/{name}", proxies.Update)
-		r.Delete("/api/v1/configs/{id}/proxies/{name}", proxies.Delete)
-		r.Post("/api/v1/configs/{id}/proxies/{name}/toggle", proxies.Toggle)
-
 		r.Post("/api/v1/configs/{id}/start", life.Start)
 		r.Post("/api/v1/configs/{id}/stop", life.Stop)
 		r.Post("/api/v1/configs/{id}/reload", life.Reload)
 		r.Get("/api/v1/configs/{id}/status", status.Get)
+
+		// 运行时监控（只读，经 worker loopback 读 frps mem/clients）
+		r.Get("/api/v1/runtime/{id}/overview", runtime.Overview)
+		r.Get("/api/v1/runtime/{id}/proxies", runtime.Proxies)
+		r.Get("/api/v1/runtime/{id}/proxies/{name}", runtime.ProxyByName)
+		r.Get("/api/v1/runtime/{id}/clients", runtime.Clients)
+
+		// 历史流量曲线
+		r.Get("/api/v1/metrics/{id}/traffic", mh.Traffic)
+
+		// 告警规则与事件
+		r.Get("/api/v1/alerts/events", mh.AlertEvents)
+		r.Get("/api/v1/alerts", mh.ListAlerts)
+		r.Post("/api/v1/alerts", mh.CreateAlert)
+		r.Get("/api/v1/alerts/{id}", mh.GetAlert)
+		r.Put("/api/v1/alerts/{id}", mh.UpdateAlert)
+		r.Delete("/api/v1/alerts/{id}", mh.DeleteAlert)
 
 		r.Post("/api/v1/validate", validate.Validate)
 
@@ -95,8 +107,6 @@ func NewRouter(d Deps) http.Handler {
 		r.Post("/api/v1/import/zip", imex.ImportZIP)
 		r.Get("/api/v1/configs/{id}/export", imex.ExportConfig)
 		r.Get("/api/v1/export/all", imex.ExportAll)
-
-		r.Post("/api/v1/nathole/discover", nat.Discover)
 
 		r.Get("/api/v1/system/info", sys.Info)
 		r.Get("/api/v1/system/cpu", sys.CPU)
