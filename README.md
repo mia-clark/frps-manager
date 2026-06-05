@@ -45,7 +45,7 @@ curl -fsSL https://gh-raw.966788.xyz/frps-mgr/install.sh | sh
 curl -fsSL https://gh-raw.966788.xyz/frps-mgr/install.sh | sh -s -- -y
 
 # 指定端口 9000 + 指定令牌
-curl -fsSL https://gh-raw.966788.xyz/frps-mgr/install.sh | sh -s -- -p 9000 -t 我的令牌 -y
+curl -fsSL https://gh-raw.966788.xyz/frps-mgr/install.sh | sh -s -- -y -p 9000 -t 我的令牌
 
 # 随机端口 + 自动生成令牌
 curl -fsSL https://gh-raw.966788.xyz/frps-mgr/install.sh | sh -s -- --port random -y
@@ -87,7 +87,7 @@ curl -fsSL https://gh-raw.966788.xyz/frps-mgr/install.sh | sh -s -- --uninstall
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/mia-clark/frps-manager/main/scripts/install.sh)"
 
 # 全自动
-curl -fsSL https://raw.githubusercontent.com/mia-clark/frps-manager/main/scripts/install.sh | sh -s -- -p 9000 -t 我的令牌 -y
+curl -fsSL https://raw.githubusercontent.com/mia-clark/frps-manager/main/scripts/install.sh | sh -s -- -y -p 9000 -t 我的令牌
 ```
 
 ### 📋 安装脚本参数
