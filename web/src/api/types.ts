@@ -33,36 +33,131 @@ export interface MgrMeta {
 // frps 服务端配置（上游 v1.ServerConfig 子集，camelCase）。
 // GET 回来的 config 会带 Complete() 后的全量字段，这里仅声明 UI 需要的最小子集，
 // 其余未知字段用索引签名原样保留（透传回 PUT 时不丢）。
+//
+// 字段精确拼写依据：
+//   $(go env GOMODCACHE)/github.com/fatedier/frp@v0.69.1/pkg/config/v1/server.go
+//   $(go env GOMODCACHE)/github.com/fatedier/frp@v0.69.1/pkg/config/v1/common.go
+//
+// 上游不规则缩写陷阱（写错就废，Go json 大小写不敏感虽能写入但回读拿不到）：
+//   server.go:46  VhostHTTPPort   `json:"vhostHTTPPort"`
+//   server.go:58  TCPMuxHTTPConnectPort `json:"tcpmuxHTTPConnectPort"`
+//   server.go:94  NatHoleAnalysisDataReserveHours `json:"natholeAnalysisDataReserveHours"`
+//   server.go:209 AutoGenPrivateKeyPath `json:"autoGenPrivateKeyPath"`
+//   server.go:168 TCPKeepAlive `json:"tcpKeepalive"`（注意小写 a）
+
+export interface PortsRange {
+  start?: number;
+  end?: number;
+  single?: number;
+}
+
+export interface TLSConfigFields {
+  certFile?: string;
+  keyFile?: string;
+  trustedCaFile?: string;
+  serverName?: string;
+}
+
+export interface ServerTransportTLS extends TLSConfigFields {
+  force?: boolean;
+}
+
+export interface QUICOptions {
+  keepalivePeriod?: number;
+  maxIdleTimeout?: number;
+  maxIncomingStreams?: number;
+}
+
+export interface ServerTransport {
+  // *bool 指针字段：true / false / 未设；未设时不应发送字段（pruneEmpty 处理）。
+  tcpMux?: boolean | null;
+  tcpMuxKeepaliveInterval?: number;
+  tcpKeepalive?: number; // JSON 标签 `tcpKeepalive`，小写 a
+  maxPoolCount?: number;
+  heartbeatTimeout?: number;
+  quic?: QUICOptions;
+  tls?: ServerTransportTLS;
+  [key: string]: unknown;
+}
+
+export interface AuthOIDC {
+  issuer?: string;
+  audience?: string;
+  skipExpiryCheck?: boolean;
+  skipIssuerCheck?: boolean;
+  [key: string]: unknown;
+}
+
+export interface SSHTunnelGateway {
+  bindPort?: number;
+  privateKeyFile?: string;
+  autoGenPrivateKeyPath?: string;
+  authorizedKeysFile?: string;
+  [key: string]: unknown;
+}
+
+export interface WebServerInfo {
+  addr?: string;
+  port?: number;
+  user?: string;
+  password?: string;
+  pprofEnable?: boolean;
+  assetsDir?: string;
+  tls?: TLSConfigFields;
+  [key: string]: unknown;
+}
+
+export interface LogConfigFields {
+  to?: string;
+  level?: string;
+  maxDays?: number;
+  disablePrintColor?: boolean;
+  [key: string]: unknown;
+}
+
 export interface ServerConfig {
+  // —— 基础监听 ——
   bindAddr?: string;
   bindPort?: number;
   kcpBindPort?: number;
   quicBindPort?: number;
+  proxyBindAddr?: string;
+  tcpmuxHTTPConnectPort?: number;
+  tcpmuxPassthrough?: boolean;
+
+  // —— 虚拟主机 ——
   vhostHTTPPort?: number;
   vhostHTTPSPort?: number;
+  vhostHTTPTimeout?: number;
   subDomainHost?: string;
+  custom404Page?: string;
+
+  // —— 端口白名单 / 限制 ——
+  allowPorts?: PortsRange[];
   maxPortsPerClient?: number;
-  auth?: {
-    method?: 'token' | 'oidc';
-    token?: string;
-    [key: string]: unknown;
-  };
-  webServer?: {
-    addr?: string;
-    port?: number;
-    user?: string;
-    password?: string;
-    [key: string]: unknown;
-  };
-  log?: {
-    to?: string;
-    level?: string;
-    maxDays?: number;
-    [key: string]: unknown;
-  };
-  // *bool 指针：可能为 null。
+
+  // —— 高级 ——
+  udpPacketSize?: number;
+  userConnTimeout?: number;
+  natholeAnalysisDataReserveHours?: number;
+  // *bool 指针：可能为 null/未设。
   detailedErrorsToClient?: boolean | null;
-  // 上游 Complete() 会补全大量字段，原样保留。
+  enablePrometheus?: boolean;
+
+  // —— 嵌套子树 ——
+  auth?: {
+    method?: 'token' | 'oidc' | '';
+    token?: string;
+    additionalScopes?: string[];
+    oidc?: AuthOIDC;
+    [key: string]: unknown;
+  };
+  transport?: ServerTransport;
+  webServer?: WebServerInfo;
+  log?: LogConfigFields;
+  sshTunnelGateway?: SSHTunnelGateway;
+
+  // —— 上游 Complete() 会补全大量字段，原样保留。 ——
   [key: string]: unknown;
 }
 

@@ -80,6 +80,51 @@ func (h *RuntimeHandler) Clients(w http.ResponseWriter, r *http.Request) {
 	writeRawJSON(w, body)
 }
 
+// ProxyByName proxies frps /api/proxies/{name} — single active proxy by name
+// across all types. Returns frps native proxy detail JSON (camelCase).
+//
+// Maps frps upstream 404 to this endpoint's 404 (proxy_not_found) so callers
+// get a clean semantic instead of 502 upstream_failure.
+func (h *RuntimeHandler) ProxyByName(w http.ResponseWriter, r *http.Request) {
+	id := pathID(r)
+	name := pathName(r)
+	if name == "" {
+		WriteError(w, http.StatusBadRequest, CodeBadRequest, "proxy name is required", nil)
+		return
+	}
+	addr, user, pass, ok := h.m.Loopback(id)
+	if !ok {
+		if !h.m.Exists(id) {
+			WriteError(w, http.StatusNotFound, CodeConfigNotFound, "config not found", nil)
+		} else {
+			WriteError(w, http.StatusConflict, CodeInvalidState, "instance is not running", nil)
+		}
+		return
+	}
+	req, err := http.NewRequest(http.MethodGet, "http://"+addr+"/api/proxies/"+name, nil)
+	if err != nil {
+		WriteError(w, http.StatusInternalServerError, CodeInternal, err.Error(), nil)
+		return
+	}
+	req.SetBasicAuth(user, pass)
+	resp, err := h.client.Do(req)
+	if err != nil {
+		WriteError(w, http.StatusBadGateway, CodeUpstreamFailure, "loopback request failed: "+err.Error(), nil)
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	switch resp.StatusCode {
+	case http.StatusOK:
+		writeRawJSON(w, body)
+	case http.StatusNotFound:
+		WriteError(w, http.StatusNotFound, CodeProxyNotFound, "proxy not found: "+name, nil)
+	default:
+		WriteError(w, http.StatusBadGateway, CodeUpstreamFailure,
+			fmt.Sprintf("frps loopback returned %d for proxy %s", resp.StatusCode, name), nil)
+	}
+}
+
 // Proxies aggregates frps /api/proxy/{type} across all proxy types into one
 // flat list of active proxies.
 func (h *RuntimeHandler) Proxies(w http.ResponseWriter, r *http.Request) {

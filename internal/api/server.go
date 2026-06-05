@@ -78,6 +78,7 @@ func NewRouter(d Deps) http.Handler {
 		// 运行时监控（只读，经 worker loopback 读 frps mem/clients）
 		r.Get("/api/v1/runtime/{id}/overview", runtime.Overview)
 		r.Get("/api/v1/runtime/{id}/proxies", runtime.Proxies)
+		r.Get("/api/v1/runtime/{id}/proxies/{name}", runtime.ProxyByName)
 		r.Get("/api/v1/runtime/{id}/clients", runtime.Clients)
 
 		// 历史流量曲线

@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import {
   Card, Row, Col, Button, Badge, Space, Typography, Popconfirm,
   Tabs, Form, Input, InputNumber, Switch, Modal,
-  message, Tag, Tooltip, Empty, List, Select, Dropdown,
+  message, Tag, Tooltip, Empty, List, Dropdown,
   theme as antdTheme,
 } from 'antd';
 import type { MenuProps } from 'antd';
@@ -43,23 +43,21 @@ import client, { getAPIToken } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 import { useEventSubscription } from '../events/EventStreamContext';
 import type { InstanceStateData } from '../events/types';
-import type { Snapshot, ServerConfig, MgrMeta, ConfigEnvelope } from '../api/types';
+import type { Snapshot, ServerConfig, MgrMeta, ConfigEnvelope, WebServerInfo } from '../api/types';
+import {
+  buildServerConfigPayload,
+  flattenServerConfig,
+  type ServerFullFormValues,
+} from './serverConfigForm';
+import ServerConfigGroups from './ServerConfigGroups';
 
 const { Title, Text } = Typography;
 
-// 可视化表单的字段集合（与 ServerConfig / MgrMeta 字段一一对应，camelCase）。
-interface ServerFormValues {
+// 可视化表单顶层值：实例元数据 + 扁平化的全部 frps 字段。
+// 扁平字段定义见 ./serverConfigForm.ts（提交时由 buildServerConfigPayload 折叠回嵌套对象）。
+interface ServerFormValues extends ServerFullFormValues {
   name?: string;
   manualStart?: boolean;
-  bindAddr?: string;
-  bindPort?: number;
-  vhostHTTPPort?: number;
-  vhostHTTPSPort?: number;
-  subDomainHost?: string;
-  authMethod?: 'token' | 'oidc';
-  authToken?: string;
-  logLevel?: string;
-  logMaxDays?: number;
 }
 
 interface NewConfigValues {
@@ -326,6 +324,7 @@ const Configs: React.FC = () => {
   };
 
   // 加载常规属性：从 GET /configs/{id} 的 env.config.* / env.frpmgr.* 回填（不要用列表快照）
+  // 全字段表单使用 flattenServerConfig 把 env.config 展平为扁平字段。
   const loadVisualConfig = async (id: string) => {
     try {
       const resp = await client.get(`/api/v1/configs/${id}`);
@@ -334,18 +333,12 @@ const Configs: React.FC = () => {
         setDetailEnvelope(env);
         const cfg = env.config || {};
         const mm = env.frpmgr || ({} as MgrMeta);
+        const flat = flattenServerConfig(cfg as Record<string, unknown>);
+        form.resetFields();
         form.setFieldsValue({
           name: mm.name || '',
           manualStart: mm.manualStart ?? false,
-          bindAddr: cfg.bindAddr || '',
-          bindPort: cfg.bindPort,
-          vhostHTTPPort: cfg.vhostHTTPPort,
-          vhostHTTPSPort: cfg.vhostHTTPSPort,
-          subDomainHost: cfg.subDomainHost || '',
-          authMethod: cfg.auth?.method || 'token',
-          authToken: cfg.auth?.token || '',
-          logLevel: cfg.log?.level || 'info',
-          logMaxDays: cfg.log?.maxDays,
+          ...flat,
         });
       }
     } catch {
@@ -458,29 +451,22 @@ const Configs: React.FC = () => {
     return 'log-line';
   };
 
-  // 保存可视化配置：只发实际要设的字段 + 透传已有 config 的未知字段
+  // 保存可视化配置：扁平表单值 → buildServerConfigPayload 折叠为嵌套 ServerConfig
+  // 并剪掉空字段/空对象，避免后端 DisallowUnknownFields 误杀。
+  //
+  // 关键点：
+  //   1. webServer 字段不在表单输入范围内（管理器接管），但保留 detailEnvelope.config.webServer
+  //      作为占位（pruneEmpty 不会触碰它，因为不在 buildServerConfigPayload 的产物里）。
+  //      worker 启动时会强制覆盖 webServer 为 loopback，所以保留旧值无副作用。
+  //   2. 透传 ServerConfig 顶层未知字段（如 enablePrometheus、metadatas、httpPlugins）：
+  //      用现有 env.config 作为基础，再用剪枝后的表单结果覆盖。
   const handleSaveVisualConfig = async (values: ServerFormValues) => {
     try {
-      // 以现有 config 为基础（保留 Complete() 补全的全量字段），只覆盖表单管理的字段。
-      const baseCfg: ServerConfig = { ...(detailEnvelope?.config ?? {}) };
-      const cfg: ServerConfig = {
-        ...baseCfg,
-        bindAddr: values.bindAddr || undefined,
-        bindPort: values.bindPort,
-        vhostHTTPPort: values.vhostHTTPPort,
-        vhostHTTPSPort: values.vhostHTTPSPort,
-        subDomainHost: values.subDomainHost || undefined,
-        auth: {
-          ...(baseCfg.auth ?? {}),
-          method: values.authMethod,
-          token: values.authMethod === 'token' ? (values.authToken || '') : undefined,
-        },
-        log: {
-          ...(baseCfg.log ?? {}),
-          level: values.logLevel,
-          maxDays: values.logMaxDays,
-        },
-      };
+      const built = buildServerConfigPayload(values);
+      // 基础合并：保留 env.config 中表单不管理的字段（包括 webServer / metadatas / 等）。
+      const baseCfg = (detailEnvelope?.config ?? {}) as Record<string, unknown>;
+      const cfg: ServerConfig = { ...baseCfg, ...built } as ServerConfig;
+
       const frpmgr: MgrMeta = {
         name: values.name || activeConfigId,
         manualStart: !!values.manualStart,
@@ -774,113 +760,12 @@ const Configs: React.FC = () => {
                         form={form}
                         layout="vertical"
                         onFinish={handleSaveVisualConfig}
-                        style={{ maxWidth: '800px', marginTop: '12px' }}
+                        style={{ marginTop: '12px' }}
                       >
-                        <Row gutter={16}>
-                          <Col span={12}>
-                            <Form.Item label="实例备注名" name="name">
-                              <Input placeholder="例如: 杭州云服务器" />
-                            </Form.Item>
-                          </Col>
-                          <Col span={12}>
-                            <Form.Item
-                              label="随系统服务自动启动"
-                              name="manualStart"
-                              valuePropName="checked"
-                              tooltip="开启「手动启动」后，守护进程重启不会自动拉起该实例。"
-                            >
-                              <Switch checkedChildren="手动启动" unCheckedChildren="随服务启动" />
-                            </Form.Item>
-                          </Col>
-                        </Row>
-
-                        <Row gutter={16}>
-                          <Col span={16}>
-                            <Form.Item label="监听地址 (bindAddr)" name="bindAddr">
-                              <Input placeholder="0.0.0.0" />
-                            </Form.Item>
-                          </Col>
-                          <Col span={8}>
-                            <Form.Item label="监听端口 (bindPort)" name="bindPort">
-                              <InputNumber min={1} max={65535} style={{ width: '100%' }} placeholder="7000" />
-                            </Form.Item>
-                          </Col>
-                        </Row>
-
-                        <Row gutter={16}>
-                          <Col span={12}>
-                            <Form.Item label="HTTP 虚拟主机端口 (vhostHTTPPort)" name="vhostHTTPPort">
-                              <InputNumber min={1} max={65535} style={{ width: '100%' }} placeholder="80" />
-                            </Form.Item>
-                          </Col>
-                          <Col span={12}>
-                            <Form.Item label="HTTPS 虚拟主机端口 (vhostHTTPSPort)" name="vhostHTTPSPort">
-                              <InputNumber min={1} max={65535} style={{ width: '100%' }} placeholder="443" />
-                            </Form.Item>
-                          </Col>
-                        </Row>
-
-                        <Form.Item label="子域名根 (subDomainHost)" name="subDomainHost">
-                          <Input placeholder="例如: frp.example.com" />
-                        </Form.Item>
-
-                        <Row gutter={16}>
-                          <Col span={8}>
-                            <Form.Item label="认证方式 (auth.method)" name="authMethod">
-                              <Select
-                                options={[
-                                  { value: 'token', label: 'Token 认证' },
-                                  { value: 'oidc', label: 'OIDC 认证' },
-                                ]}
-                              />
-                            </Form.Item>
-                          </Col>
-                          <Col span={16}>
-                            <Form.Item
-                              noStyle
-                              shouldUpdate={(p, c) => p.authMethod !== c.authMethod}
-                            >
-                              {({ getFieldValue }) =>
-                                getFieldValue('authMethod') === 'token' ? (
-                                  <Form.Item label="Token 密钥 (auth.token)" name="authToken">
-                                    <Input.Password placeholder="客户端连接此服务端使用的密钥" />
-                                  </Form.Item>
-                                ) : (
-                                  <Form.Item label="提示" >
-                                    <Text type="secondary" style={{ fontSize: 12 }}>
-                                      OIDC 详细参数请在「高级 TOML 配置」里设置。
-                                    </Text>
-                                  </Form.Item>
-                                )
-                              }
-                            </Form.Item>
-                          </Col>
-                        </Row>
-
-                        <Row gutter={16}>
-                          <Col span={12}>
-                            <Form.Item label="日志级别 (log.level)" name="logLevel">
-                              <Select
-                                options={[
-                                  { value: 'trace', label: 'trace (最详细)' },
-                                  { value: 'debug', label: 'debug (调试)' },
-                                  { value: 'info', label: 'info (常规信息)' },
-                                  { value: 'warn', label: 'warn (警告)' },
-                                  { value: 'error', label: 'error (错误)' },
-                                ]}
-                              />
-                            </Form.Item>
-                          </Col>
-                          <Col span={12}>
-                            <Form.Item label="日志保留天数 (log.maxDays)" name="logMaxDays">
-                              <InputNumber min={1} max={90} style={{ width: '100%' }} placeholder="3" />
-                            </Form.Item>
-                          </Col>
-                        </Row>
-
-                        <Form.Item style={{ marginTop: 20, borderTop: `1px solid ${token.colorBorderSecondary}`, paddingTop: 16, textAlign: 'right' }}>
-                          <Button type="primary" htmlType="submit">保存服务端配置</Button>
-                        </Form.Item>
+                        <ServerConfigGroups
+                          envelopeWebServer={(detailEnvelope?.config?.webServer as WebServerInfo | undefined)}
+                          themeBorderColor={token.colorBorderSecondary}
+                        />
                       </Form>
                     ),
                   },
