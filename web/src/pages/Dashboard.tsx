@@ -216,7 +216,7 @@ const Dashboard: React.FC = () => {
               仪表盘
             </Title>
             <Text type="secondary" style={{ fontSize: 13 }}>
-              一眼掌握 frps 实例、宿主机资源与事件流的实时状态。
+              一眼掌握 FRPS 实例、宿主机资源与事件流的实时状态。
             </Text>
           </Space>
           <Space size="middle" wrap>
@@ -406,7 +406,7 @@ const Dashboard: React.FC = () => {
             extra={<Link to="/configs">管理实例</Link>}
           >
             {configs.length === 0 ? (
-              <Empty description="还没有配置任何 frps 实例" />
+              <Empty description="还没有配置任何 FRPS 实例" />
             ) : (
               <Row gutter={[12, 12]}>
                 {configs.map((c) => (

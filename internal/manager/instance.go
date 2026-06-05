@@ -66,7 +66,8 @@ func (i *instance) Path() string { return i.path }
 type Snapshot struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`
-	Path      string     `json:"path"`
+	Path      string     `json:"path"`      // toml 配置文件路径
+	LogPath   string     `json:"log_path"`  // 管理器接管该实例 worker 输出的日志文件路径
 	State     string     `json:"state"`
 	LastError string     `json:"last_error,omitempty"`
 	StartedAt *time.Time `json:"started_at,omitempty"`

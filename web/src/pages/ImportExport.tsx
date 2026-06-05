@@ -128,7 +128,7 @@ const ImportExport: React.FC = () => {
             style={cardStyle}
           >
             <Paragraph type="secondary">
-              一键导出当前 FRP 管理服务中的全部配置为标准 ZIP 包；也可拖拽上传以前导出的 ZIP 备份来覆盖还原。
+              一键导出当前管理器中的全部 FRPS 配置为标准 ZIP 包；也可拖拽上传以前导出的 ZIP 备份来覆盖还原。
             </Paragraph>
 
             <div style={{ margin: '20px 0', textAlign: 'center' }}>
@@ -206,7 +206,7 @@ const ImportExport: React.FC = () => {
         <Col xs={24} md={12}>
           <Card title={<Space><CloudUploadOutlined /> 导入本地配置文件</Space>} style={cardStyle}>
             <Paragraph type="secondary">
-              从本地选择现有的 FRP 客户端配置文件（.toml 或 .ini）上传并导入到服务中。
+              从本地选择现有的 FRPS 服务端配置文件（.toml）上传并导入到管理器中。
             </Paragraph>
 
             <Space direction="vertical" style={{ width: '100%', marginTop: 8 }}>

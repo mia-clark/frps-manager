@@ -17,7 +17,8 @@
 export interface Snapshot {
   id: string;
   name: string;
-  path: string;
+  path: string;       // toml 配置文件绝对路径
+  log_path: string;   // 管理器接管该实例 worker 输出的日志文件路径
   state: 'stopped' | 'starting' | 'started' | 'stopping';
   last_error?: string;
   started_at?: string;

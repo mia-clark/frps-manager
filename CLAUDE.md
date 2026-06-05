@@ -100,7 +100,7 @@ make docker       # 多阶段镜像（自带 node+go，无需本地依赖）
 - 版本号在**构建期由 `-ldflags` 注入** [pkg/version](pkg/version)，不要在源码里硬编码。
 - 内嵌的 frp 版本也记录在 `pkg/version`（`frpmgrd version` 会一并打印）。
 - 发布走 CI（`.github/workflows/release.yml`），release 提交形如 `chore(release): vX.Y.Z [skip ci]`。
-- 运维统一用安装脚本生成的 **`fms` 命令**：`fms start/stop/restart/status/logs -f/url/update/uninstall`（自动适配 systemd/OpenRC/launchd/Windows 服务）。改动 `install.sh`/`install.ps1` 只对新装或下次 `fms update` 生效。
+- 运维统一用安装脚本生成的 **`fms` 命令**（14 个子命令）：服务管理 `start/stop/restart/status/logs [-f]/enable/disable`、信息查看 `info/config [edit]/version`、安装维护 `install/update/uninstall`、`help`。自动适配 systemd/OpenRC/launchd/Windows 服务；`fms info` 查看地址与 API 令牌（忘令牌时用）。改动 `install.sh`/`install.ps1` 只对新装或下次 `fms update` 生效。
 
 ## 9. 提交规范
 

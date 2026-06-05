@@ -15,6 +15,8 @@ const { Text } = Typography;
 interface Props {
   envelopeWebServer?: WebServerInfo;
   themeBorderColor: string;
+  /** 管理器接管的该实例日志路径。来自 envelope.log_path。展示给用户看："留空即可，日志自动落到这"。 */
+  logPath?: string;
 }
 
 /** 三态 *bool 指针的 Select 选项（未设 / 启用 / 禁用）。
@@ -42,7 +44,7 @@ const authMethodOptions = [
   { value: 'oidc', label: 'OIDC 认证' },
 ];
 
-const ServerConfigGroups: React.FC<Props> = ({ envelopeWebServer, themeBorderColor }) => {
+const ServerConfigGroups: React.FC<Props> = ({ envelopeWebServer, themeBorderColor, logPath }) => {
   return (
     <>
       <Row gutter={16}>
@@ -71,7 +73,7 @@ const ServerConfigGroups: React.FC<Props> = ({ envelopeWebServer, themeBorderCol
           // ─── 1. 基础监听 ───
           {
             key: 'basic',
-            label: <Space><Tag color="blue" bordered={false}>基础</Tag>监听地址 / 端口</Space>,
+            label: <Space><Tag color="blue" bordered={false}>基础</Tag><span style={{ fontWeight: 600, fontSize: 15, letterSpacing: 0.3 }}>监听地址 / 端口</span></Space>,
             children: (
               <>
                 <Row gutter={16}>
@@ -140,7 +142,7 @@ const ServerConfigGroups: React.FC<Props> = ({ envelopeWebServer, themeBorderCol
           // ─── 2. 认证 (auth.*) ───
           {
             key: 'auth',
-            label: <Space><Tag color="purple" bordered={false}>auth</Tag>认证</Space>,
+            label: <Space><Tag color="purple" bordered={false}>auth</Tag><span style={{ fontWeight: 600, fontSize: 15, letterSpacing: 0.3 }}>认证</span></Space>,
             children: (
               <>
                 <Row gutter={16}>
@@ -230,7 +232,7 @@ const ServerConfigGroups: React.FC<Props> = ({ envelopeWebServer, themeBorderCol
           // ─── 3. 传输 (transport.*) ───
           {
             key: 'transport',
-            label: <Space><Tag color="cyan" bordered={false}>transport</Tag>传输层（连接 / QUIC / TLS）</Space>,
+            label: <Space><Tag color="cyan" bordered={false}>transport</Tag><span style={{ fontWeight: 600, fontSize: 15, letterSpacing: 0.3 }}>传输层（连接 / QUIC / TLS）</span></Space>,
             children: (
               <>
                 <Row gutter={16}>
@@ -342,7 +344,7 @@ const ServerConfigGroups: React.FC<Props> = ({ envelopeWebServer, themeBorderCol
           // ─── 4. 虚拟主机 (vhost.*) ───
           {
             key: 'vhost',
-            label: <Space><Tag color="green" bordered={false}>vhost</Tag>HTTP / HTTPS 虚拟主机</Space>,
+            label: <Space><Tag color="green" bordered={false}>vhost</Tag><span style={{ fontWeight: 600, fontSize: 15, letterSpacing: 0.3 }}>HTTP / HTTPS 虚拟主机</span></Space>,
             children: (
               <>
                 <Row gutter={16}>
@@ -383,7 +385,7 @@ const ServerConfigGroups: React.FC<Props> = ({ envelopeWebServer, themeBorderCol
           // ─── 5. 端口白名单 / 限制 ───
           {
             key: 'ports',
-            label: <Space><Tag color="orange" bordered={false}>限制</Tag>端口白名单 (allowPorts) / 每客户端上限</Space>,
+            label: <Space><Tag color="orange" bordered={false}>限制</Tag><span style={{ fontWeight: 600, fontSize: 15, letterSpacing: 0.3 }}>端口白名单 (allowPorts) / 每客户端上限</span></Space>,
             children: (
               <>
                 <Alert
@@ -465,7 +467,7 @@ const ServerConfigGroups: React.FC<Props> = ({ envelopeWebServer, themeBorderCol
           // ─── 6. SSH 网关 ───
           {
             key: 'ssh',
-            label: <Space><Tag color="geekblue" bordered={false}>ssh</Tag>SSH 隧道网关 (sshTunnelGateway)</Space>,
+            label: <Space><Tag color="geekblue" bordered={false}>ssh</Tag><span style={{ fontWeight: 600, fontSize: 15, letterSpacing: 0.3 }}>SSH 隧道网关 (sshTunnelGateway)</span></Space>,
             children: (
               <>
                 <Alert
@@ -505,7 +507,7 @@ const ServerConfigGroups: React.FC<Props> = ({ envelopeWebServer, themeBorderCol
           // ─── 7. 日志 (log.*) ───
           {
             key: 'log',
-            label: <Space><Tag color="gold" bordered={false}>log</Tag>日志</Space>,
+            label: <Space><Tag color="gold" bordered={false}>log</Tag><span style={{ fontWeight: 600, fontSize: 15, letterSpacing: 0.3 }}>日志</span></Space>,
             children: (
               <>
                 <Row gutter={16}>
@@ -532,10 +534,39 @@ const ServerConfigGroups: React.FC<Props> = ({ envelopeWebServer, themeBorderCol
                 <Form.Item
                   label="输出位置 (log.to)"
                   name="logTo"
-                  tooltip="console 输出到 stdout；填写路径则写文件。本管理器统一接管 worker 输出，此处一般留默认即可。"
+                  tooltip={
+                    <>
+                      <div><b>留空 / console</b>（推荐）：frps 输出到 stdout，由本管理器接管，自动按实例分流到下方提示路径。前端「日志速览」/「日志流」直接读取。</div>
+                      <div style={{ marginTop: 6 }}><b>填路径</b>：frps 自己写文件，<u>绕过</u>管理器接管 → 管理器 UI 看不到日志。仅当你想让 frps 直写宿主机某个路径时才用。</div>
+                    </>
+                  }
                 >
-                  <Input placeholder="console / /var/log/frps.log" />
+                  <Input placeholder="留空（推荐，管理器接管）/ console / 或绝对路径" />
                 </Form.Item>
+                {logPath && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    style={{ marginTop: -8, marginBottom: 4 }}
+                    message={
+                      <Space size={6} wrap>
+                        <span>本实例日志已被管理器接管到：</span>
+                        <code style={{ background: 'rgba(0,0,0,0.04)', padding: '1px 6px', borderRadius: 4, fontSize: 12.5 }}>{logPath}</code>
+                        <Button
+                          size="small"
+                          type="link"
+                          style={{ padding: 0, height: 'auto' }}
+                          onClick={() => {
+                            navigator.clipboard?.writeText(logPath);
+                          }}
+                        >
+                          复制路径
+                        </Button>
+                      </Space>
+                    }
+                    description={<span style={{ fontSize: 12, color: '#666' }}>多实例自动按 ID 区分文件，无需在 log.to 里手动指定。</span>}
+                  />
+                )}
               </>
             ),
           },
@@ -543,7 +574,7 @@ const ServerConfigGroups: React.FC<Props> = ({ envelopeWebServer, themeBorderCol
           // ─── 8. webServer（只读展示 + 提示） ───
           {
             key: 'webserver',
-            label: <Space><Tag color="red" bordered={false}>只读</Tag>webServer（管理器接管）</Space>,
+            label: <Space><Tag color="red" bordered={false}>只读</Tag><span style={{ fontWeight: 600, fontSize: 15, letterSpacing: 0.3 }}>webServer（管理器接管）</span></Space>,
             children: (
               <>
                 <Alert
@@ -588,7 +619,7 @@ const ServerConfigGroups: React.FC<Props> = ({ envelopeWebServer, themeBorderCol
           // ─── 9. 高级 ───
           {
             key: 'advanced',
-            label: <Space><Tag bordered={false}>高级</Tag>UDP / NAT 探测 / 用户连接超时</Space>,
+            label: <Space><Tag bordered={false}>高级</Tag><span style={{ fontWeight: 600, fontSize: 15, letterSpacing: 0.3 }}>UDP / NAT 探测 / 用户连接超时</span></Space>,
             children: (
               <Row gutter={16}>
                 <Col span={8}>

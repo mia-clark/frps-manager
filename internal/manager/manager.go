@@ -202,6 +202,7 @@ func (m *Manager) List() []Snapshot {
 		if inst := m.get(id); inst != nil {
 			s := inst.Snapshot()
 			s.Name = m.nameOf(id)
+			s.LogPath = m.LogPath(id)
 			out = append(out, s)
 		}
 	}
@@ -225,6 +226,7 @@ func (m *Manager) Get(id string) (Snapshot, *config.ServerConfigV1, MgrMeta, err
 	}
 	snap := inst.Snapshot()
 	snap.Name = m.nameOf(id)
+	snap.LogPath = m.LogPath(id)
 	mm := MgrMeta{Name: m.nameOf(id), ManualStart: m.meta.manualStart(id)}
 	return snap, sc, mm, nil
 }
@@ -244,9 +246,11 @@ func (m *Manager) Create(id string, sc *config.ServerConfigV1, mm MgrMeta) error
 	if m.Exists(id) {
 		return ErrExists
 	}
-	if err := sc.Complete(); err != nil {
-		return fmt.Errorf("complete config: %w", err)
-	}
+	// 不在这里调 sc.Complete()：它会把上游默认值（如 ProxyBindAddr=BindAddr=0.0.0.0、
+	// DetailedErrorsToClient=true、NatholeAnalysisDataReserveHours=168 等）写进 sc，
+	// 接着 MarshalTOML 会把这些"用户没设置过"的默认值持久化到 TOML 文件 — 导致用户
+	// 清空字段时 UI 永远看到默认值（"清空不生效"）。
+	// frps worker 子进程启动时会自己 Complete()，所以这里跳过完全安全。
 	b, err := sc.MarshalTOML()
 	if err != nil {
 		return err
@@ -272,9 +276,8 @@ func (m *Manager) Update(id string, sc *config.ServerConfigV1, mm MgrMeta) error
 	if inst == nil {
 		return ErrNotFound
 	}
-	if err := sc.Complete(); err != nil {
-		return fmt.Errorf("complete config: %w", err)
-	}
+	// 同 Create：不在此处 Complete()，避免把默认值持久化到 TOML（清空字段无法生效）。
+	// worker 启动时自己会 Complete。
 	b, err := sc.MarshalTOML()
 	if err != nil {
 		return err

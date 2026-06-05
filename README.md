@@ -209,18 +209,26 @@ curl -H "Authorization: Bearer $TOKEN" $BASE/api/v1/runtime/main/clients
 一键安装会附带 **`fms`** 命令（已加入 PATH），自动适配 systemd / OpenRC / launchd / Windows 服务：
 
 ```bash
-fms start        # 启动守护进程
-fms stop         # 停止
-fms restart      # 重启
-fms status       # 运行状态
-fms logs -f      # 实时日志
-fms enable       # 设置开机自启
-fms disable      # 取消开机自启
-fms url          # 显示访问地址与 API 令牌（忘了令牌时很有用）
-fms config       # 查看配置（fms config edit 用编辑器打开）
-fms update       # 更新到最新版（保留端口/令牌/数据）
-fms uninstall    # 卸载
-fms help         # 全部命令
+# 服务管理
+fms start          # 启动服务
+fms stop           # 停止服务
+fms restart        # 重启服务
+fms status         # 查看运行状态
+fms logs -f        # 实时跟踪日志（不加 -f 看最近若干行）
+fms enable         # 设置开机自启
+fms disable        # 取消开机自启
+
+# 信息查看
+fms info           # 显示完整运行信息(地址/令牌/路径/状态) + 命令面板 ← 忘了令牌看这个
+fms config         # 查看配置文件（fms config edit 用编辑器打开）
+fms version        # 显示版本信息
+
+# 安装维护
+fms install [参数] # 重新安装（参数透传给 install.sh / install.ps1）
+fms update         # 更新到最新版（保留端口/令牌/数据）
+fms uninstall      # 卸载
+
+fms help           # 显示帮助
 ```
 
 > 仍想用原生命令也行：systemd 用 `systemctl status frpsmgrd` / `journalctl -u frpsmgrd -f`；macOS 用 `sudo launchctl list | grep frpsmgrd`；Windows 用 `services.msc`。

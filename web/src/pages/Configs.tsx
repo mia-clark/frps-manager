@@ -47,6 +47,7 @@ import type { Snapshot, ServerConfig, MgrMeta, ConfigEnvelope, WebServerInfo } f
 import {
   buildServerConfigPayload,
   flattenServerConfig,
+  mergeServerConfig,
   type ServerFullFormValues,
 } from './serverConfigForm';
 import ServerConfigGroups from './ServerConfigGroups';
@@ -300,7 +301,7 @@ const Configs: React.FC = () => {
             Modal.confirm({
               title: `确定删除「${item.name || item.id}」？`,
               icon: <ExclamationCircleOutlined />,
-              content: '删除后该 frps 服务端配置无法恢复。',
+              content: '删除后该 FRPS 服务端配置无法恢复。',
               okText: '删除',
               okType: 'danger',
               cancelText: '取消',
@@ -456,16 +457,16 @@ const Configs: React.FC = () => {
   //
   // 关键点：
   //   1. webServer 字段不在表单输入范围内（管理器接管），但保留 detailEnvelope.config.webServer
-  //      作为占位（pruneEmpty 不会触碰它，因为不在 buildServerConfigPayload 的产物里）。
+  //      作为占位（mergeServerConfig 不在 MANAGED_TOP_KEYS 里删，会原样透传）。
   //      worker 启动时会强制覆盖 webServer 为 loopback，所以保留旧值无副作用。
-  //   2. 透传 ServerConfig 顶层未知字段（如 enablePrometheus、metadatas、httpPlugins）：
-  //      用现有 env.config 作为基础，再用剪枝后的表单结果覆盖。
+  //   2. 透传 ServerConfig 顶层未知字段（如 enablePrometheus、metadatas、httpPlugins）：同上。
+  //   3. **清空字段 → 真清空**：mergeServerConfig 先从 baseCfg 删除所有 MANAGED_TOP_KEYS，
+  //      再 spread built。用户清空的字段在 built 里没有 key → 最终 payload 也没 →
+  //      Go 收到后用零值 → 后端真清空。修复了"清空字段无效"的 bug。
   const handleSaveVisualConfig = async (values: ServerFormValues) => {
     try {
       const built = buildServerConfigPayload(values);
-      // 基础合并：保留 env.config 中表单不管理的字段（包括 webServer / metadatas / 等）。
-      const baseCfg = (detailEnvelope?.config ?? {}) as Record<string, unknown>;
-      const cfg: ServerConfig = { ...baseCfg, ...built } as ServerConfig;
+      const cfg = mergeServerConfig(detailEnvelope?.config as Record<string, unknown> | undefined, built) as ServerConfig;
 
       const frpsmgr: MgrMeta = {
         name: values.name || activeConfigId,
@@ -575,7 +576,7 @@ const Configs: React.FC = () => {
           <div style={{ flex: 1, overflowY: 'auto', paddingRight: '4px' }}>
             {configs.length === 0 ? (
               <Card style={{ textAlign: 'center', padding: compactList ? '20px 0' : '40px 0', borderRadius: 10 }}>
-                <Empty description={compactList ? '暂无配置' : '暂无 frps 服务端配置，点击右上角创建。'} />
+                <Empty description={compactList ? '暂无配置' : '暂无 FRPS 服务端配置，点击右上角创建。'} />
               </Card>
             ) : (
               <List
@@ -705,7 +706,7 @@ const Configs: React.FC = () => {
                             </Tooltip>
                             <Popconfirm
                               title="确定要删除这个配置吗？"
-                              description="删除后该 frps 服务端配置无法恢复。"
+                              description="删除后该 FRPS 服务端配置无法恢复。"
                               onConfirm={() => handleDeleteConfig(item.id)}
                               onPopupClick={(e) => e.stopPropagation()}
                               okText="确定"
@@ -765,6 +766,7 @@ const Configs: React.FC = () => {
                         <ServerConfigGroups
                           envelopeWebServer={(detailEnvelope?.config?.webServer as WebServerInfo | undefined)}
                           themeBorderColor={token.colorBorderSecondary}
+                          logPath={detailEnvelope?.log_path}
                         />
                       </Form>
                     ),
@@ -889,7 +891,7 @@ const Configs: React.FC = () => {
                           >
                             {miniLogLines.length === 0 ? (
                               <div style={{ opacity: 0.5, padding: 16, textAlign: 'center' }}>
-                                暂无日志，等待 frps 输出…
+                                暂无日志，等待 FRPS 输出…
                               </div>
                             ) : (
                               <>
@@ -909,7 +911,7 @@ const Configs: React.FC = () => {
             </Card>
           ) : (
             <Card style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '100px 0', borderRadius: 10 }}>
-              <Empty description="请在左侧选择或创建一个 frps 服务端配置。" />
+              <Empty description="请在左侧选择或创建一个 FRPS 服务端配置。" />
             </Card>
           )}
         </Col>
@@ -917,7 +919,7 @@ const Configs: React.FC = () => {
 
       {/* 新建配置 Modal */}
       <Modal
-        title="新建 frps 服务端配置"
+        title="新建 FRPS 服务端配置"
         open={newConfigModalOpen}
         onCancel={() => setNewConfigModalOpen(false)}
         maskClosable={false}

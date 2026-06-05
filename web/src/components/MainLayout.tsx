@@ -161,7 +161,7 @@ const MainLayout: React.FC = () => {
         >
           <SafetyCertificateOutlined style={{ fontSize: 22, color: token.colorPrimary }} />
           <Text strong style={{ color: '#fff', fontSize: 15, letterSpacing: 0.5 }}>
-            FRP Manager
+            FRPS Manager
           </Text>
         </div>
         <Menu

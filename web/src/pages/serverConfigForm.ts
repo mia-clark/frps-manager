@@ -238,6 +238,50 @@ export function buildServerConfigPayload(v: ServerFullFormValues): BuiltServerCo
   return (pruneEmpty(rawCfg) ?? {}) as BuiltServerConfig;
 }
 
+/**
+ * 可视化表单**管理**的全部顶层字段。保存合并时，需要先把这些 key 从
+ * 旧 envelope.config 中删除，再 spread built — 否则用户在表单清空字段时，
+ * 因为 pruneEmpty 把空 key 剪掉了，merge 会让 baseCfg 中的旧值"残留"，
+ * 视觉上的"清空"实际未生效。
+ *
+ * **不在此列**的字段（webServer / metadatas / httpPlugins / enablePrometheus
+ * 等）会通过 baseCfg 原样保留 — 它们由 TOML 编辑器或 worker 接管。
+ */
+export const MANAGED_TOP_KEYS: ReadonlySet<string> = new Set([
+  // 基础
+  'bindAddr', 'bindPort', 'proxyBindAddr',
+  'kcpBindPort', 'quicBindPort',
+  'tcpmuxHTTPConnectPort', 'tcpmuxPassthrough',
+  'detailedErrorsToClient',
+  // vhost
+  'vhostHTTPPort', 'vhostHTTPSPort', 'vhostHTTPTimeout', 'subDomainHost', 'custom404Page',
+  // 端口白名单
+  'allowPorts', 'maxPortsPerClient',
+  // 高级
+  'udpPacketSize', 'userConnTimeout', 'natholeAnalysisDataReserveHours',
+  // 嵌套子树（整体由表单管理；若整子树被剪掉则旧子树也应清空，所以列入）
+  'auth', 'transport', 'log', 'sshTunnelGateway',
+]);
+
+/**
+ * 把表单产物 built 与旧 envelope.config 合并为提交 payload。
+ *
+ * 策略：先从 baseCfg 中删除所有 MANAGED_TOP_KEYS（这样用户清空字段就真生效），
+ * 再 spread built。结果：
+ *   - 表单管理的字段 → 完全由 built 决定（清空 = 不出现 = Go 收到时用零值，字段被清空）
+ *   - 表单不管理的字段（webServer / metadatas / httpPlugins / enablePrometheus 等）→ 从 baseCfg 透传
+ */
+export function mergeServerConfig(
+  baseCfg: Record<string, unknown> | undefined | null,
+  built: Record<string, unknown>,
+): Record<string, unknown> {
+  const base: Record<string, unknown> = { ...(baseCfg ?? {}) };
+  for (const k of MANAGED_TOP_KEYS) {
+    delete base[k];
+  }
+  return { ...base, ...built };
+}
+
 /** 从 ServerConfig 回填扁平表单值。允许 cfg 为空，全部字段返回 undefined。 */
 export function flattenServerConfig(cfg: Record<string, unknown> | undefined | null): ServerFullFormValues {
   const c = cfg ?? {};

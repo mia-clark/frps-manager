@@ -260,7 +260,7 @@ const Runtime: React.FC = () => {
           </Title>
           <Select
             style={{ minWidth: 280 }}
-            placeholder="选择一个 frps 实例"
+            placeholder="选择一个 FRPS 实例"
             value={selectedId || undefined}
             onChange={setSelectedId}
             options={selectOptions}
@@ -287,7 +287,7 @@ const Runtime: React.FC = () => {
 
       {!selectedId ? (
         <Card style={{ padding: '80px 0', borderRadius: 10 }}>
-          <Empty description="请先在上方选择一个 frps 实例。" />
+          <Empty description="请先在上方选择一个 FRPS 实例。" />
         </Card>
       ) : notRunning ? (
         <Card style={{ padding: '60px 0', borderRadius: 10 }}>
@@ -355,7 +355,7 @@ const Runtime: React.FC = () => {
             </Space>
             <Row gutter={[16, 8]}>
               <Col xs={12} md={6}>
-                <Text type="secondary">frps 版本</Text>
+                <Text type="secondary">FRPS 版本</Text>
                 <div><Text strong>{overview?.version ?? '—'}</Text></div>
               </Col>
               <Col xs={12} md={6}>
@@ -411,7 +411,7 @@ const Runtime: React.FC = () => {
             type="info"
             showIcon
             banner
-            message="运行时数据为 frps 服务端在客户端连接后产生的动态指标，每 5 秒自动刷新。"
+            message="运行时数据为 FRPS 服务端在客户端连接后产生的动态指标，每 5 秒自动刷新。"
           />
         </Space>
       )}
