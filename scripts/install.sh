@@ -1,6 +1,6 @@
 #!/bin/sh
 # =============================================================================
-# frpmgrd 一键安装脚本 (frp-manager-server)
+# frpsmgrd 一键安装脚本 (frp-manager-server)
 #
 #   支持: macOS / 各类 Linux (systemd / OpenRC / 通用回退)
 #   下载: 自动选择 curl 或 wget
@@ -16,7 +16,7 @@
 #   sh install.sh --uninstall
 #
 # 环境变量 (等价于命令行参数, 便于自动化):
-#   FRPMGR_PORT=9000  FRPMGR_API_TOKEN=xxx  FRPMGR_VERSION=v1.2.10  ASSUME_YES=1
+#   FRPSMGR_PORT=9000  FRPSMGR_API_TOKEN=xxx  FRPSMGR_VERSION=v1.2.10  ASSUME_YES=1
 # =============================================================================
 
 set -eu
@@ -25,9 +25,9 @@ set -eu
 # 常量配置
 # ----------------------------------------------------------------------------
 REPO="mia-clark/frp-manager-server"
-BIN_NAME="frpmgrd"
+BIN_NAME="frpsmgrd"
 INSTALL_DIR="/usr/local/bin"
-SERVICE_NAME="frpmgrd"
+SERVICE_NAME="frpsmgrd"
 DEFAULT_PORT="8080"
 
 # 这些值会在 detect_platform / 参数解析阶段被填充
@@ -36,9 +36,9 @@ ARCH=""
 DATA_DIR=""
 ENV_FILE=""
 DOWNLOADER=""
-VERSION="${FRPMGR_VERSION:-}"
-PORT="${FRPMGR_PORT:-}"
-TOKEN="${FRPMGR_API_TOKEN:-}"
+VERSION="${FRPSMGR_VERSION:-}"
+PORT="${FRPSMGR_PORT:-}"
+TOKEN="${FRPSMGR_API_TOKEN:-}"
 ASSUME_YES="${ASSUME_YES:-0}"
 FORCE="0"
 ACTION="install"
@@ -67,7 +67,7 @@ trap cleanup EXIT INT TERM
 # ----------------------------------------------------------------------------
 usage() {
     cat <<EOF
-${C_BOLD}frpmgrd 一键安装脚本${C_RST}
+${C_BOLD}frpsmgrd 一键安装脚本${C_RST}
 
 用法: sh install.sh [选项]
 
@@ -95,7 +95,7 @@ ${C_BOLD}frpmgrd 一键安装脚本${C_RST}
   sh install.sh --uninstall                     # 卸载
 
 环境变量等价形式 (适合 CI/自动化):
-  FRPMGR_PORT=9000 FRPMGR_API_TOKEN=xxx ASSUME_YES=1 sh install.sh
+  FRPSMGR_PORT=9000 FRPSMGR_API_TOKEN=xxx ASSUME_YES=1 sh install.sh
 EOF
 }
 
@@ -256,7 +256,7 @@ gen_token() {
         LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | dd bs=48 count=1 2>/dev/null
     else
         # 退而求其次: 时间戳 + 进程号
-        printf "frpmgr%s%s" "$(date +%s)" "$$"
+        printf "frpsmgr%s%s" "$(date +%s)" "$$"
     fi
 }
 
@@ -368,7 +368,7 @@ download_and_install() {
     _asset="${BIN_NAME}_${_ver_num}_${OS}_${ARCH}.tar.gz"
     _url="https://github.com/${REPO}/releases/download/${VERSION}/${_asset}"
 
-    TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t frpmgr)"
+    TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t frpsmgr)"
     info "下载: ${_url}"
     fetch_file "$_url" "${TMP_DIR}/${_asset}" || die "下载失败, 请检查网络或版本号"
 
@@ -390,15 +390,15 @@ write_env_file() {
     priv mkdir -p "$(dirname "$ENV_FILE")"
     priv mkdir -p "$DATA_DIR"
     # 通过临时文件再 install, 避免重定向到特权路径的麻烦
-    _tmp_env="${TMP_DIR}/frpmgrd.env"
+    _tmp_env="${TMP_DIR}/frpsmgrd.env"
     cat > "$_tmp_env" <<EOF
-# frpmgrd 运行配置 (由 install.sh 生成)
-FRPMGR_API_TOKEN=${TOKEN}
-FRPMGR_HTTP_ADDR=:${PORT}
-FRPMGR_DATA_DIR=${DATA_DIR}
-FRPMGR_LOG_LEVEL=info
-FRPMGR_CORS_ORIGINS=*
-FRPMGR_DOCS_ENABLED=true
+# frpsmgrd 运行配置 (由 install.sh 生成)
+FRPSMGR_API_TOKEN=${TOKEN}
+FRPSMGR_HTTP_ADDR=:${PORT}
+FRPSMGR_DATA_DIR=${DATA_DIR}
+FRPSMGR_LOG_LEVEL=info
+FRPSMGR_CORS_ORIGINS=*
+FRPSMGR_DOCS_ENABLED=true
 EOF
     priv install -m 0600 "$_tmp_env" "$ENV_FILE"
 }
@@ -425,7 +425,7 @@ setup_systemd() {
     _tmp_unit="${TMP_DIR}/${SERVICE_NAME}.service"
     cat > "$_tmp_unit" <<EOF
 [Unit]
-Description=frpmgrd - FRP Manager Server
+Description=frpsmgrd - FRP Manager Server
 Documentation=https://github.com/${REPO}
 After=network-online.target
 Wants=network-online.target
@@ -459,7 +459,7 @@ setup_openrc() {
     cat > "$_tmp_init" <<EOF
 #!/sbin/openrc-run
 name="${SERVICE_NAME}"
-description="frpmgrd - FRP Manager Server"
+description="frpsmgrd - FRP Manager Server"
 command="${INSTALL_DIR}/${BIN_NAME}"
 command_args="serve"
 command_background=true
@@ -503,13 +503,13 @@ setup_launchd() {
     </array>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>FRPMGR_API_TOKEN</key>
+        <key>FRPSMGR_API_TOKEN</key>
         <string>${TOKEN}</string>
-        <key>FRPMGR_HTTP_ADDR</key>
+        <key>FRPSMGR_HTTP_ADDR</key>
         <string>:${PORT}</string>
-        <key>FRPMGR_DATA_DIR</key>
+        <key>FRPSMGR_DATA_DIR</key>
         <string>${DATA_DIR}</string>
-        <key>FRPMGR_LOG_LEVEL</key>
+        <key>FRPSMGR_LOG_LEVEL</key>
         <string>info</string>
     </dict>
     <key>RunAtLoad</key>
@@ -551,14 +551,14 @@ install_cli() {
     _cli="${INSTALL_DIR}/fms"
     info "安装管理命令: ${_cli}"
     # TMP_DIR 正常已由下载阶段创建; 兜底再建一次
-    [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ] || TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t frpmgr)"
+    [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ] || TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t frpsmgr)"
     _tmp_cli="${TMP_DIR}/fms"
 
     # 头部: 注入安装期常量 (此 heredoc 不加引号, 变量会被展开并固化进脚本)
     cat > "$_tmp_cli" <<EOF
 #!/bin/sh
 # =============================================================================
-# fms — frpmgrd 管理命令 (由 install.sh 自动生成, 请勿手动编辑)
+# fms — frpsmgrd 管理命令 (由 install.sh 自动生成, 请勿手动编辑)
 #   用法: fms <命令> [参数]   (fms help 查看全部命令)
 # =============================================================================
 REPO="${REPO}"
@@ -595,8 +595,8 @@ priv() { $SUDO "$@"; }
 
 PLIST="/Library/LaunchDaemons/com.miaclark.${SERVICE_NAME}.plist"
 
-# 允许用镜像源覆盖 install.sh 下载地址 (适配国内网络): FRPMGR_INSTALL_URL=https://镜像/install.sh
-if [ -n "${FRPMGR_INSTALL_URL:-}" ]; then RAW_URL="$FRPMGR_INSTALL_URL"; fi
+# 允许用镜像源覆盖 install.sh 下载地址 (适配国内网络): FRPSMGR_INSTALL_URL=https://镜像/install.sh
+if [ -n "${FRPSMGR_INSTALL_URL:-}" ]; then RAW_URL="$FRPSMGR_INSTALL_URL"; fi
 
 # 运行期探测 init 系统 (与安装时解耦, 迁移/换系统也能用)
 detect_init() {
@@ -701,10 +701,10 @@ cli_panel() {
     printf "%b\n" "────────────────────────────────────────────"
 }
 cmd_info() {
-    _addr="$(env_get FRPMGR_HTTP_ADDR)"; _port="${_addr#:}"; [ -n "$_port" ] || _port="8080"
-    _token="$(env_get FRPMGR_API_TOKEN)"
-    _ddir="$(env_get FRPMGR_DATA_DIR)";  [ -n "$_ddir" ] || _ddir="$DATA_DIR"
-    _loglv="$(env_get FRPMGR_LOG_LEVEL)"; [ -n "$_loglv" ] || _loglv="info"
+    _addr="$(env_get FRPSMGR_HTTP_ADDR)"; _port="${_addr#:}"; [ -n "$_port" ] || _port="8080"
+    _token="$(env_get FRPSMGR_API_TOKEN)"
+    _ddir="$(env_get FRPSMGR_DATA_DIR)";  [ -n "$_ddir" ] || _ddir="$DATA_DIR"
+    _loglv="$(env_get FRPSMGR_LOG_LEVEL)"; [ -n "$_loglv" ] || _loglv="info"
     _ver="$("${INSTALL_DIR}/${BIN_NAME}" version 2>/dev/null || echo 未知)"
     case "$(detect_init)" in
         systemd) _svc="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -718,7 +718,7 @@ cmd_info() {
                  _logc="tail -f /var/log/${SERVICE_NAME}.log" ;;
         *)       _svc="(未注册)"; _state="unknown"; _logc="(无)" ;;
     esac
-    printf "%b\n" "${C_BOLD}frpmgrd 运行信息${C_RST}"
+    printf "%b\n" "${C_BOLD}frpsmgrd 运行信息${C_RST}"
     printf "%b\n" "────────────────────────────────────────────"
     printf "  版本     : %s\n" "$_ver"
     printf "  服务状态 : %s\n" "$_state"
@@ -754,7 +754,7 @@ cmd_uninstall() {
 }
 
 usage() {
-    printf "%b\n" "${C_BOLD}fms — frpmgrd 管理命令${C_RST}
+    printf "%b\n" "${C_BOLD}fms — frpsmgrd 管理命令${C_RST}
 
 用法: fms <命令> [参数]
 
@@ -828,13 +828,13 @@ get_installed_version() {
 # ----------------------------------------------------------------------------
 read_env_port() {
     if [ -f "$ENV_FILE" ]; then
-        _addr="$(grep '^FRPMGR_HTTP_ADDR=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2)"
+        _addr="$(grep '^FRPSMGR_HTTP_ADDR=' "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2)"
         echo "${_addr#:}"
     elif [ "$OS" = "darwin" ]; then
         _plist="/Library/LaunchDaemons/com.miaclark.${SERVICE_NAME}.plist"
         if [ -f "$_plist" ] && [ -x /usr/libexec/PlistBuddy ]; then
             _addr="$(priv /usr/libexec/PlistBuddy -c \
-                "Print :EnvironmentVariables:FRPMGR_HTTP_ADDR" "$_plist" 2>/dev/null)"
+                "Print :EnvironmentVariables:FRPSMGR_HTTP_ADDR" "$_plist" 2>/dev/null)"
             echo "${_addr#:}"
         fi
     fi
@@ -898,7 +898,7 @@ health_check() {
 # 安装总流程
 # ----------------------------------------------------------------------------
 do_install() {
-    printf "%b\n" "${C_BOLD}=== frpmgrd 一键安装 ===${C_RST}"
+    printf "%b\n" "${C_BOLD}=== frpsmgrd 一键安装 ===${C_RST}"
     detect_platform
     detect_downloader
     ensure_root
@@ -949,7 +949,7 @@ print_summary() {
 # 全自动更新流程 (保留现有端口/令牌/数据, 仅替换二进制并重启服务)
 # ----------------------------------------------------------------------------
 do_update() {
-    printf "%b\n" "${C_BOLD}=== frpmgrd 全自动更新 ===${C_RST}"
+    printf "%b\n" "${C_BOLD}=== frpsmgrd 全自动更新 ===${C_RST}"
     detect_platform
     detect_downloader
     ensure_root
@@ -993,7 +993,7 @@ do_update() {
 # 卸载流程
 # ----------------------------------------------------------------------------
 do_uninstall() {
-    printf "%b\n" "${C_BOLD}=== frpmgrd 卸载 ===${C_RST}"
+    printf "%b\n" "${C_BOLD}=== frpsmgrd 卸载 ===${C_RST}"
     detect_platform
     ensure_root
 

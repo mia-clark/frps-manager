@@ -14,12 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/mia-clark/frp-manager-server/internal/api"
-	"github.com/mia-clark/frp-manager-server/internal/appcfg"
-	"github.com/mia-clark/frp-manager-server/internal/eventbus"
-	"github.com/mia-clark/frp-manager-server/internal/manager"
-	"github.com/mia-clark/frp-manager-server/internal/metrics"
-	"github.com/mia-clark/frp-manager-server/pkg/version"
+	"github.com/mia-clark/frps-manager/internal/api"
+	"github.com/mia-clark/frps-manager/internal/appcfg"
+	"github.com/mia-clark/frps-manager/internal/eventbus"
+	"github.com/mia-clark/frps-manager/internal/manager"
+	"github.com/mia-clark/frps-manager/internal/metrics"
+	"github.com/mia-clark/frps-manager/pkg/version"
 )
 
 func main() {
@@ -35,7 +35,7 @@ func main() {
 	case "health":
 		os.Exit(runHealth(os.Args[2:]))
 	case "version", "-v", "--version":
-		fmt.Printf("frpmgrd %s (frp %s, built %s)\n", version.Number, version.FRPVersion, version.BuildDate)
+		fmt.Printf("frpsmgrd %s (frp %s, built %s)\n", version.Number, version.FRPVersion, version.BuildDate)
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -46,10 +46,10 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, `frpmgrd — headless FRP client manager daemon
+	fmt.Fprintln(os.Stderr, `frpsmgrd — headless FRP client manager daemon
 
 USAGE
-  frpmgrd <command> [flags]
+  frpsmgrd <command> [flags]
 
 COMMANDS
   serve     Run the HTTP API server (default for containers)
@@ -58,12 +58,12 @@ COMMANDS
   help      Show this help
 
 ENV
-  FRPMGR_API_TOKEN       Required. Bearer token for API auth.
-  FRPMGR_HTTP_ADDR       Listen address (default ":8080")
-  FRPMGR_DATA_DIR        Data root (default "/data")
-  FRPMGR_CORS_ORIGINS    Comma-separated origins or "*" (default "*")
-  FRPMGR_LOG_LEVEL       trace|debug|info|warn|error (default "info")
-  FRPMGR_DOCS_ENABLED    Expose /api/docs Scalar UI (default "true")`)
+  FRPSMGR_API_TOKEN       Required. Bearer token for API auth.
+  FRPSMGR_HTTP_ADDR       Listen address (default ":8080")
+  FRPSMGR_DATA_DIR        Data root (default "/data")
+  FRPSMGR_CORS_ORIGINS    Comma-separated origins or "*" (default "*")
+  FRPSMGR_LOG_LEVEL       trace|debug|info|warn|error (default "info")
+  FRPSMGR_DOCS_ENABLED    Expose /api/docs Scalar UI (default "true")`)
 }
 
 func runServe(args []string) int {
@@ -81,7 +81,7 @@ func runServe(args []string) int {
 	}
 
 	logger := newLogger(cfg.LogLevel)
-	logger.Info("starting frpmgrd",
+	logger.Info("starting frpsmgrd",
 		slog.String("addr", cfg.HTTPAddr),
 		slog.String("data_dir", cfg.DataDir),
 		slog.String("version", version.Number),

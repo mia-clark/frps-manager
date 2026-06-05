@@ -19,7 +19,7 @@ export function api(daemon: Daemon) {
         body: JSON.stringify({
           id,
           config: minimalServerConfig(bindPort),
-          frpmgr: { name, manualStart: true },
+          frpsmgr: { name, manualStart: true },
         }),
       });
       if (!r.ok) throw new Error(`createConfig(${id}) failed: ${r.status} ${await r.text()}`);

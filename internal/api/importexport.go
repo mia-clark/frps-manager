@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mia-clark/frp-manager-server/internal/manager"
-	"github.com/mia-clark/frp-manager-server/pkg/config"
+	"github.com/mia-clark/frps-manager/internal/manager"
+	"github.com/mia-clark/frps-manager/pkg/config"
 )
 
 // ImportExportHandler implements /api/v1/import/* and /api/v1/export/*.
@@ -165,7 +165,7 @@ func (h *ImportExportHandler) ExportConfig(w http.ResponseWriter, r *http.Reques
 // ExportAll returns a zip archive of every config file plus meta.json.
 func (h *ImportExportHandler) ExportAll(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="frpmgr-export-%s.zip"`, time.Now().UTC().Format("20060102-150405")))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="frps-manager-export-%s.zip"`, time.Now().UTC().Format("20060102-150405")))
 
 	zw := zip.NewWriter(w)
 	defer zw.Close()
@@ -203,7 +203,7 @@ func (h *ImportExportHandler) persistRaw(w http.ResponseWriter, id string, raw [
 		return
 	}
 	snap, sc, mm, _ := h.m.Get(id)
-	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: sc, Frpmgr: mm})
+	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: sc, Frpsmgr: mm})
 }
 
 // upsertRaw creates the config if absent, otherwise replaces its body.

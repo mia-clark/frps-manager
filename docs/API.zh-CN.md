@@ -1,4 +1,4 @@
-# frpmgrd API 详细参考（frps 服务端管理器 · v1）
+# frpsmgrd API 详细参考（frps 服务端管理器 · v1）
 
 > 本文件依据当前 [`internal/api`](../internal/api/) 与 [`internal/manager`](../internal/manager/) 实地核对生成，覆盖路径、请求体、响应体、错误码的全部字段。
 > 凡是与 [`internal/api/openapi.yaml`](../internal/api/openapi.yaml) 不一致之处，请同步修复两者；正常情况下二者完全等价。
@@ -9,14 +9,14 @@
 
 | 项目 | 值 |
 |---|---|
-| 监听地址 | `FRPMGR_HTTP_ADDR`，默认 `:8080` |
-| 数据目录 | `FRPMGR_DATA_DIR`，默认 `/data`（子目录：`profiles/`、`logs/`、`stores/`、`meta.json`） |
-| 鉴权 | 除 `/api/v1/health` 与 `/api/docs/*` 外，所有 `/api/v1/*` 都要求 `Authorization: Bearer <FRPMGR_API_TOKEN>` |
+| 监听地址 | `FRPSMGR_HTTP_ADDR`，默认 `:8080` |
+| 数据目录 | `FRPSMGR_DATA_DIR`，默认 `/data`（子目录：`profiles/`、`logs/`、`stores/`、`meta.json`） |
+| 鉴权 | 除 `/api/v1/health` 与 `/api/docs/*` 外，所有 `/api/v1/*` 都要求 `Authorization: Bearer <FRPSMGR_API_TOKEN>` |
 | Content-Type | 除特别说明（`/raw`、`/import/*`、`/validate`、`/export/*`、WS）外，**请求/返回均为 `application/json; charset=utf-8`** |
 | JSON 严格性 | 后端 `decodeJSON` 启用 `DisallowUnknownFields()`，请求体多带一个 key 直接 **`400`** |
 | 401 时机 | 缺失或错误 Bearer Token；前端拦截器会清理 token 并跳转 `/login` |
 | 路径 ID 限制 | 不允许路径分隔符与 shell 特殊字符（`/ \ : ? * < > | " '`），不能以 `.` 开头，长度 ≤ 64 |
-| WebSocket 子路径 | `/api/v1/events`、`/api/v1/configs/{id}/logs/tail` —— 浏览器无法自定义 WS Header，故支持 `?token=...` 查询参数；CORS 由 `FRPMGR_CORS_ORIGINS` 控制 |
+| WebSocket 子路径 | `/api/v1/events`、`/api/v1/configs/{id}/logs/tail` —— 浏览器无法自定义 WS Header，故支持 `?token=...` 查询参数；CORS 由 `FRPSMGR_CORS_ORIGINS` 控制 |
 
 ### 0.1 错误响应统一信封
 
@@ -50,26 +50,26 @@
 
 ### 0.2 关键架构事实（绑定字段前必须先看一眼）
 
-- **子进程模型**：每个运行中的 frps 都是父进程 re-exec 自身得到的独立子进程（`frps-worker`，见 [`cmd/frpmgrd/frps_worker.go`](../cmd/frpmgrd/frps_worker.go)）。原因是上游 `mem.StatsCollector` 是进程级全局单例，同进程跑多个 frps 会把所有实例流量混在一起、无法按实例分离。
+- **子进程模型**：每个运行中的 frps 都是父进程 re-exec 自身得到的独立子进程（`frps-worker`，见 [`cmd/frpsmgrd/frps_worker.go`](../cmd/frpsmgrd/frps_worker.go)）。原因是上游 `mem.StatsCollector` 是进程级全局单例，同进程跑多个 frps 会把所有实例流量混在一起、无法按实例分离。
 - **`webServer` 强制 loopback**：worker 启动前父进程预分配 `127.0.0.1:N` 空闲端口，强制覆盖 `webServer.addr/port/user/password`，账密随机；父进程通过该 loopback 反向读取 frps 原生 `/api/serverinfo`、`/api/proxy/{type}`、`/api/clients` 等运行时指标。**用户配置里的 `webServer` 字段会被忽略**，外部无法访问 frps 自身 dashboard，管理面统一走本守护进程的 HTTP API。
 - **reload = 重启**：frps 服务端参数没有 in-place 热重载语义。`POST .../reload` 的实现就是 `stop()` → `start()`（见 [`manager/instance.go#reload`](../internal/manager/instance.go)）。
-- **每实例独立日志**：`<FRPMGR_DATA_DIR>/logs/<id>.log`，worker 的 stdout/stderr 全量落盘。`DELETE .../logs` 只更新 `log_view_since` 水位，不删盘上文件。
+- **每实例独立日志**：`<FRPSMGR_DATA_DIR>/logs/<id>.log`，worker 的 stdout/stderr 全量落盘。`DELETE .../logs` 只更新 `log_view_since` 水位，不删盘上文件。
 - **配置数据模型分两种 JSON 命名风格（最大踩坑点）**：
   - **业务配置（`config` 字段）= camelCase**：对应 [`pkg/config.ServerConfigV1`](../pkg/config/server.go)，内嵌上游 `github.com/fatedier/frp/pkg/config/v1.ServerConfig`，字段如 `bindPort` / `vhostHTTPPort` / `vhostHTTPSPort` / `kcpBindPort` / `quicBindPort` / `auth.method` / `transport.tcpMux` / `webServer.password` / `log.level` 等。
   - **快照 / 元数据 / 事件 / 告警 / 流量 = snake_case**：`Snapshot`（`id` / `name` / `path` / `state` / `last_error` / `started_at` / `stopped_at`），`TrafficPoint`、`AlertRule`、`AlertEvent`、WS `Event` 全部 snake_case。
-  - **管理器元数据（`frpmgr` 字段）= camelCase**：[`manager.MgrMeta`](../internal/manager/manager.go) 只有 `name` 与 `manualStart` 两个字段，不写入 frps TOML，落 `meta.json`。
+  - **管理器元数据（`frpsmgr` 字段）= camelCase**：[`manager.MgrMeta`](../internal/manager/manager.go) 只有 `name` 与 `manualStart` 两个字段，不写入 frps TOML，落 `meta.json`。
 - **`/runtime/*` 是 frps 原生 JSON 透传**：守护进程经 worker loopback 代理 frps 原生 `/api/serverinfo`、`/api/proxy/{type}`、`/api/proxies/{name}`、`/api/clients` 后**原样回写**响应体；字段形态以 frps 上游为准（**camelCase**），不是本项目 Snapshot 的 snake_case 风格。
 
 ### 0.3 配置环境变量（[`internal/appcfg`](../internal/appcfg/appcfg.go)）
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `FRPMGR_API_TOKEN` | （必填） | API 鉴权令牌 |
-| `FRPMGR_HTTP_ADDR` | `:8080` | 监听地址 |
-| `FRPMGR_DATA_DIR` | `/data` | 数据根目录 |
-| `FRPMGR_CORS_ORIGINS` | `*` | CORS 白名单（CSV） |
-| `FRPMGR_LOG_LEVEL` | `info` | trace/debug/info/warn/error |
-| `FRPMGR_DOCS_ENABLED` | `true` | 是否挂载 `/api/docs/*` |
+| `FRPSMGR_API_TOKEN` | （必填） | API 鉴权令牌 |
+| `FRPSMGR_HTTP_ADDR` | `:8080` | 监听地址 |
+| `FRPSMGR_DATA_DIR` | `/data` | 数据根目录 |
+| `FRPSMGR_CORS_ORIGINS` | `*` | CORS 白名单（CSV） |
+| `FRPSMGR_LOG_LEVEL` | `info` | trace/debug/info/warn/error |
+| `FRPSMGR_DOCS_ENABLED` | `true` | 是否挂载 `/api/docs/*` |
 
 ---
 
@@ -102,7 +102,7 @@
 | `GET /api/docs/openapi.yaml` | 内嵌 OpenAPI 3.1 Spec（YAML） |
 | `GET /api/docs/openapi.json` | 同上（Content-Type 不同，主体仍为 YAML 文本） |
 
-`FRPMGR_DOCS_ENABLED=false` 可整片下线。
+`FRPSMGR_DOCS_ENABLED=false` 可整片下线。
 
 ---
 
@@ -155,7 +155,7 @@
     "auth": { "method": "token", "token": "abc" },
     "log": { "level": "info" }
   },
-  "frpmgr": { "name": "Tokyo Edge", "manualStart": false }
+  "frpsmgr": { "name": "Tokyo Edge", "manualStart": false }
 }
 ```
 
@@ -163,7 +163,7 @@
 |---|---|---|---|
 | `id` | string | √ | 实例 ID |
 | `config` | object | √ | `ServerConfigV1`，见 §11 |
-| `frpmgr` | object | × | `{name, manualStart}`，缺省时 `name` 回填 ID、`manualStart=false` |
+| `frpsmgr` | object | × | `{name, manualStart}`，缺省时 `name` 回填 ID、`manualStart=false` |
 
 后端会：
 1. 校验 ID。
@@ -177,7 +177,7 @@
 
 ### 2.3 `GET /api/v1/configs/{id}` — 取单个实例
 
-无请求体。返回 `200` + `ConfigEnvelope`（Snapshot snake_case + `config` camelCase + `frpmgr` camelCase）。
+无请求体。返回 `200` + `ConfigEnvelope`（Snapshot snake_case + `config` camelCase + `frpsmgr` camelCase）。
 
 不存在 → `404 / config_not_found`。
 
@@ -188,14 +188,14 @@
 ```json
 {
   "config": { "bindPort": 7000, "...": "..." },
-  "frpmgr": { "name": "新名字", "manualStart": true }
+  "frpsmgr": { "name": "新名字", "manualStart": true }
 }
 ```
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | `config` | √ | 完整 `ServerConfigV1` |
-| `frpmgr` | × | 缺省时不变 |
+| `frpsmgr` | × | 缺省时不变 |
 
 后端 `Complete() → MarshalTOML() → 原子写盘 → meta 更新 → 若 `state=started` 则自动 reload（= restart）`。
 
@@ -212,7 +212,7 @@
 { "log": { "level": "debug" } }
 ```
 
-`frpmgr` 不在 patch 顶层时保持不变。运行中实例会自动 restart。
+`frpsmgr` 不在 patch 顶层时保持不变。运行中实例会自动 restart。
 
 ### 2.6 `DELETE /api/v1/configs/{id}` — 删除
 
@@ -226,7 +226,7 @@
 { "new_id": "edge-tokyo-copy" }
 ```
 
-复制 `config` 与 `frpmgr`（含 `manualStart`）。返回 `201` + 新 `ConfigEnvelope`。
+复制 `config` 与 `frpsmgr`（含 `manualStart`）。返回 `201` + 新 `ConfigEnvelope`。
 
 冲突 → `409`；缺 `new_id` → `400`。
 
@@ -264,7 +264,7 @@
   "config": { "bindPort": 7000, "vhostHTTPPort": 8080, "auth": { "method": "token", "token": "abc" } },
 
   // ----- 管理器元数据（camelCase）-----
-  "frpmgr": { "name": "Tokyo Edge", "manualStart": false }
+  "frpsmgr": { "name": "Tokyo Edge", "manualStart": false }
 }
 ```
 
@@ -558,7 +558,7 @@ Query：
 
 ### 8.0 模型
 
-每个 frps worker 的 stdout/stderr 全量落到该实例独立的 `<FRPMGR_DATA_DIR>/logs/<id>.log`。本节接口都基于这个文件（与历史版本"合并日志 + 前缀过滤"截然不同）。
+每个 frps worker 的 stdout/stderr 全量落到该实例独立的 `<FRPSMGR_DATA_DIR>/logs/<id>.log`。本节接口都基于这个文件（与历史版本"合并日志 + 前缀过滤"截然不同）。
 
 `DELETE` 不删盘上文件，只更新 `meta.json` 中该实例的 `log_view_since` 时间戳（Unix 毫秒），后续 `GET` / `WS` 跳过时间戳早于水位的行。
 
@@ -647,7 +647,7 @@ Query：
 
 ### 9.6 `GET /api/v1/export/all` — 全部 ZIP
 
-`Content-Type: application/zip`，`Content-Disposition: attachment; filename="frpmgr-export-YYYYmmdd-HHMMSS.zip"`，内含 `profiles/*.{toml,ini,conf}`。
+`Content-Type: application/zip`，`Content-Disposition: attachment; filename="frps-manager-export-YYYYmmdd-HHMMSS.zip"`，内含 `profiles/*.{toml,ini,conf}`。
 
 ---
 
@@ -802,7 +802,7 @@ Query：
 
 Go `encoding/json` 默认大小写不敏感匹配，前端写错 key **也能反序列化成功**，但回读字段名错对不上前端模型，UI 上看到"配置丢失"。
 
-### 11.2 `frpmgr` 管理器元数据（camelCase）
+### 11.2 `frpsmgr` 管理器元数据（camelCase）
 
 | 字段 | 类型 | 说明 |
 |---|---|---|

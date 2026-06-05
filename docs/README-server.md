@@ -1,17 +1,17 @@
-# frpmgr-server — 部署与使用
+# frps-manager — 部署与使用
 
-`frpmgrd` 是 Linux 优先、Docker 友好的 FRP 客户端守护进程,通过完整的 REST + WebSocket API 管理多个 frpc 实例。原 Windows GUI 版本的 70% 业务能力(配置 CRUD、热重载、状态跟踪、日志查看、导入导出、自毁配置)以 API 形式提供。
+`frpsmgrd` 是 Linux 优先、Docker 友好的 FRP 客户端守护进程,通过完整的 REST + WebSocket API 管理多个 frpc 实例。原 Windows GUI 版本的 70% 业务能力(配置 CRUD、热重载、状态跟踪、日志查看、导入导出、自毁配置)以 API 形式提供。
 
 ## 快速开始 (docker compose)
 
 ```bash
 cd deploy/
 cp .env.example .env
-# 至少改一下 FRPMGR_API_TOKEN
+# 至少改一下 FRPSMGR_API_TOKEN
 openssl rand -hex 32  # 复制结果填进 .env
 
 docker compose up -d --build
-docker compose logs -f frpmgrd
+docker compose logs -f frpsmgrd
 ```
 
 健康检查:
@@ -24,7 +24,7 @@ curl http://localhost:8080/api/v1/health
 附 token 调用任意 API:
 
 ```bash
-TOKEN=$(grep ^FRPMGR_API_TOKEN= .env | cut -d= -f2)
+TOKEN=$(grep ^FRPSMGR_API_TOKEN= .env | cut -d= -f2)
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/version
 ```
 
@@ -44,12 +44,12 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/version
 
 | 变量 | 必填 | 默认 | 说明 |
 |---|---|---|---|
-| `FRPMGR_API_TOKEN` | ✓ | — | API 鉴权 Bearer Token |
-| `FRPMGR_HTTP_ADDR` |   | `:8080` | 监听地址 |
-| `FRPMGR_DATA_DIR`  |   | `/data` | 数据根目录 |
-| `FRPMGR_CORS_ORIGINS` |   | `*` | 逗号分隔的 CORS 白名单 |
-| `FRPMGR_LOG_LEVEL` |   | `info` | trace/debug/info/warn/error |
-| `FRPMGR_DOCS_ENABLED` |   | `true` | 是否暴露 `/api/docs` 浏览器 UI(关闭后所有 docs 路由返回 404) |
+| `FRPSMGR_API_TOKEN` | ✓ | — | API 鉴权 Bearer Token |
+| `FRPSMGR_HTTP_ADDR` |   | `:8080` | 监听地址 |
+| `FRPSMGR_DATA_DIR`  |   | `/data` | 数据根目录 |
+| `FRPSMGR_CORS_ORIGINS` |   | `*` | 逗号分隔的 CORS 白名单 |
+| `FRPSMGR_LOG_LEVEL` |   | `info` | trace/debug/info/warn/error |
+| `FRPSMGR_DOCS_ENABLED` |   | `true` | 是否暴露 `/api/docs` 浏览器 UI(关闭后所有 docs 路由返回 404) |
 
 ## 鉴权
 
@@ -96,7 +96,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/version
 - HTML 页:`GET /api/docs/` — Scalar reference UI,从 jsdelivr CDN 加载 JS bundle
 - 原始 spec:`GET /api/docs/openapi.yaml`(也支持 `.json` 别名)
 - **默认免鉴权** — 与多数开源 daemon 的 Swagger/ReDoc 端点惯例一致
-- **关闭方式**:`FRPMGR_DOCS_ENABLED=false`(docs 三个路由全部返回 404,其他 API 不受影响)
+- **关闭方式**:`FRPSMGR_DOCS_ENABLED=false`(docs 三个路由全部返回 404,其他 API 不受影响)
 - **离线场景**:如果容器无外网,把 Scalar 的 standalone bundle 下载到本地并修改 [`internal/api/docs.go`](../internal/api/docs.go) 中的 `<script src>` 即可
 
 ## 事件 schema
@@ -144,15 +144,15 @@ curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
       "proxies": [
         {"type":"tcp","name":"ssh","localIP":"127.0.0.1","localPort":22,"remotePort":2222}
       ],
-      "frpmgr": {"name":"Demo Tunnel","manualStart":true}
+      "frpsmgr": {"name":"Demo Tunnel","manualStart":true}
     }
   }'
 ```
 
-`config` 字段就是 frp 官方 `ClientCommonConfig` 的 JSON 形态,外加一个 `frpmgr` 扩展块:
+`config` 字段就是 frp 官方 `ClientCommonConfig` 的 JSON 形态,外加一个 `frpsmgr` 扩展块:
 
 ```json
-"frpmgr": {
+"frpsmgr": {
   "name": "human readable label",
   "manualStart": true,        // true = 仅手动启动；false / 缺省 = daemon 启动时自动 Start
   "autoDelete": {
@@ -163,7 +163,7 @@ curl -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
 }
 ```
 
-> daemon 重启行为：所有 `manualStart != true` 的实例都会在 `frpmgrd serve` 启动时被自动拉起；想要某实例随 daemon 启停"持久关闭"，把 `manualStart` 置为 `true` 后保存即可。启动顺序遵循 `meta.json` 的 `sort` 列表。
+> daemon 重启行为：所有 `manualStart != true` 的实例都会在 `frpsmgrd serve` 启动时被自动拉起；想要某实例随 daemon 启停"持久关闭"，把 `manualStart` 置为 `true` 后保存即可。启动顺序遵循 `meta.json` 的 `sort` 列表。
 
 
 ## 流量与连接数指标(重要)
@@ -207,7 +207,7 @@ make build
 
 ## 故障排查
 
-- **401 unauthorized**: 检查 `FRPMGR_API_TOKEN` 是否对齐
+- **401 unauthorized**: 检查 `FRPSMGR_API_TOKEN` 是否对齐
 - **404 在 WS 时**: 路径必须是 `/api/v1/events`,token 走 `?token=` 或 Authorization header
 - **start 立即返回成功但 proxy.status 不上来**: 看 `/api/v1/configs/{id}/logs/tail`,通常是 frps 端连不上 / token 错
-- **容器健康检查失败**: `docker compose exec frpmgrd frpmgrd health`
+- **容器健康检查失败**: `docker compose exec frpsmgrd frpsmgrd health`

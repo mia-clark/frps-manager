@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/mia-clark/frp-manager-server/internal/manager"
-	"github.com/mia-clark/frp-manager-server/pkg/config"
+	"github.com/mia-clark/frps-manager/internal/manager"
+	"github.com/mia-clark/frps-manager/pkg/config"
 )
 
 // ConfigsHandler serves the /api/v1/configs endpoints.
@@ -26,14 +26,14 @@ func NewConfigsHandler(m *manager.Manager, log *slog.Logger) *ConfigsHandler {
 type configEnvelope struct {
 	manager.Snapshot
 	Config *config.ServerConfigV1 `json:"config"`
-	Frpmgr manager.MgrMeta        `json:"frpmgr"`
+	Frpsmgr manager.MgrMeta        `json:"frpsmgr"`
 }
 
 // createReq is the input body for POST /configs.
 type createReq struct {
 	ID     string                 `json:"id"`
 	Config *config.ServerConfigV1 `json:"config"`
-	Frpmgr manager.MgrMeta        `json:"frpmgr"`
+	Frpsmgr manager.MgrMeta        `json:"frpsmgr"`
 }
 
 // List returns every registered config.
@@ -48,7 +48,7 @@ func (h *ConfigsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if writeManagerError(w, err) {
 		return
 	}
-	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: sc, Frpmgr: mm})
+	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: sc, Frpsmgr: mm})
 }
 
 // Create persists a new config from the supplied ServerConfigV1 body.
@@ -61,11 +61,11 @@ func (h *ConfigsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusBadRequest, CodeBadRequest, "id and config are required", nil)
 		return
 	}
-	if err := h.m.Create(req.ID, req.Config, req.Frpmgr); writeManagerError(w, err) {
+	if err := h.m.Create(req.ID, req.Config, req.Frpsmgr); writeManagerError(w, err) {
 		return
 	}
 	snap, sc, mm, _ := h.m.Get(req.ID)
-	WriteJSON(w, http.StatusCreated, configEnvelope{Snapshot: snap, Config: sc, Frpmgr: mm})
+	WriteJSON(w, http.StatusCreated, configEnvelope{Snapshot: snap, Config: sc, Frpsmgr: mm})
 }
 
 // Update replaces the whole config body for an existing instance.
@@ -73,7 +73,7 @@ func (h *ConfigsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := pathID(r)
 	var body struct {
 		Config *config.ServerConfigV1 `json:"config"`
-		Frpmgr manager.MgrMeta        `json:"frpmgr"`
+		Frpsmgr manager.MgrMeta        `json:"frpsmgr"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -82,16 +82,16 @@ func (h *ConfigsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusBadRequest, CodeBadRequest, "config is required", nil)
 		return
 	}
-	if err := h.m.Update(id, body.Config, body.Frpmgr); writeManagerError(w, err) {
+	if err := h.m.Update(id, body.Config, body.Frpsmgr); writeManagerError(w, err) {
 		return
 	}
 	snap, sc, mm, _ := h.m.Get(id)
-	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: sc, Frpmgr: mm})
+	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: sc, Frpsmgr: mm})
 }
 
 // Patch applies a JSON merge over the existing ServerConfigV1 body. The
-// manager metadata (frpmgr) is preserved unless the patch carries a
-// top-level "frpmgr" object.
+// manager metadata (frpsmgr) is preserved unless the patch carries a
+// top-level "frpsmgr" object.
 func (h *ConfigsHandler) Patch(w http.ResponseWriter, r *http.Request) {
 	id := pathID(r)
 	_, sc, mm, err := h.m.Get(id)
@@ -122,7 +122,7 @@ func (h *ConfigsHandler) Patch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	snap, fresh, freshMM, _ := h.m.Get(id)
-	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: fresh, Frpmgr: freshMM})
+	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: fresh, Frpsmgr: freshMM})
 }
 
 // Delete stops and removes an instance.
@@ -155,7 +155,7 @@ func (h *ConfigsHandler) Duplicate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	snap, fresh, freshMM, _ := h.m.Get(body.NewID)
-	WriteJSON(w, http.StatusCreated, configEnvelope{Snapshot: snap, Config: fresh, Frpmgr: freshMM})
+	WriteJSON(w, http.StatusCreated, configEnvelope{Snapshot: snap, Config: fresh, Frpsmgr: freshMM})
 }
 
 // GetRaw returns the on-disk TOML bytes verbatim.
@@ -181,7 +181,7 @@ func (h *ConfigsHandler) PutRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	snap, sc, mm, _ := h.m.Get(id)
-	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: sc, Frpmgr: mm})
+	WriteJSON(w, http.StatusOK, configEnvelope{Snapshot: snap, Config: sc, Frpsmgr: mm})
 }
 
 // Reorder persists the user's chosen display order.

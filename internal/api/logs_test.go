@@ -16,8 +16,8 @@ import (
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mia-clark/frp-manager-server/internal/manager"
-	"github.com/mia-clark/frp-manager-server/pkg/config"
+	"github.com/mia-clark/frps-manager/internal/manager"
+	"github.com/mia-clark/frps-manager/pkg/config"
 )
 
 // 子进程模型下每个 frps 实例写各自的 <id>.log，不再有合并日志/前缀。

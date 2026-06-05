@@ -55,19 +55,19 @@ check "version 正确 token 200" 200 -H "$H_AUTH" "$B/version"
 
 section "2. Configs CRUD"
 check "POST /configs 201" 201 -H "$H_AUTH" -H "$H_JSON" -X POST "$B/configs" \
-  -d '{"id":"srv1","config":{"bindPort":7301,"vhostHTTPPort":8081},"frpmgr":{"name":"测试1","manualStart":false}}'
+  -d '{"id":"srv1","config":{"bindPort":7301,"vhostHTTPPort":8081},"frpsmgr":{"name":"测试1","manualStart":false}}'
 check "POST /configs 重复 409" 409 -H "$H_AUTH" -H "$H_JSON" -X POST "$B/configs" \
-  -d '{"id":"srv1","config":{"bindPort":7000},"frpmgr":{}}'
+  -d '{"id":"srv1","config":{"bindPort":7000},"frpsmgr":{}}'
 check "POST /configs 缺 id 400" 400 -H "$H_AUTH" -H "$H_JSON" -X POST "$B/configs" -d '{"config":{"bindPort":7000}}'
 check "POST /configs 非法 id 400" 400 -H "$H_AUTH" -H "$H_JSON" -X POST "$B/configs" \
-  -d '{"id":"bad/id","config":{"bindPort":7000},"frpmgr":{}}'
+  -d '{"id":"bad/id","config":{"bindPort":7000},"frpsmgr":{}}'
 check "POST /configs 未知字段 400 (DisallowUnknownFields)" 400 -H "$H_AUTH" -H "$H_JSON" -X POST "$B/configs" \
-  -d '{"id":"x","config":{"bindPort":7000},"frpmgr":{},"hacker":true}'
+  -d '{"id":"x","config":{"bindPort":7000},"frpsmgr":{},"hacker":true}'
 check_contains "GET /configs 列表" 200 '"id":"srv1"' -H "$H_AUTH" "$B/configs"
 check_contains "GET /configs/srv1 含 bindPort" 200 '"bindPort":7301' -H "$H_AUTH" "$B/configs/srv1"
 check "GET /configs/nonexist 404" 404 -H "$H_AUTH" "$B/configs/nonexist"
 check "PUT /configs/srv1 200" 200 -H "$H_AUTH" -H "$H_JSON" -X PUT "$B/configs/srv1" \
-  -d '{"config":{"bindPort":7301,"vhostHTTPPort":8081,"subDomainHost":"example.com"},"frpmgr":{"name":"测试1","manualStart":false}}'
+  -d '{"config":{"bindPort":7301,"vhostHTTPPort":8081,"subDomainHost":"example.com"},"frpsmgr":{"name":"测试1","manualStart":false}}'
 check_contains "PUT 后 subDomainHost 已更新" 200 '"subDomainHost":"example.com"' -H "$H_AUTH" "$B/configs/srv1"
 check "PATCH /configs/srv1 200" 200 -H "$H_AUTH" -H "$H_JSON" -X PATCH "$B/configs/srv1" \
   -d '{"vhostHTTPSPort":8443}'

@@ -161,10 +161,10 @@ export interface ServerConfig {
   [key: string]: unknown;
 }
 
-// GET /configs/{id} 等接口的响应信封：Snapshot 全部字段 + config + frpmgr。
+// GET /configs/{id} 等接口的响应信封：Snapshot 全部字段 + config + frpsmgr。
 export interface ConfigEnvelope extends Snapshot {
   config: ServerConfig;
-  frpmgr: MgrMeta;
+  frpsmgr: MgrMeta;
 }
 
 // 列表响应。

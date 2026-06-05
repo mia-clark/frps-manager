@@ -2,17 +2,17 @@ import axios from 'axios';
 
 // 从 localStorage 获取已保存的 API Token
 export const getAPIToken = (): string => {
-  return localStorage.getItem('frpmgr_api_token') || '';
+  return localStorage.getItem('frpsmgr_api_token') || '';
 };
 
 // 保存 API Token
 export const setAPIToken = (token: string) => {
-  localStorage.setItem('frpmgr_api_token', token);
+  localStorage.setItem('frpsmgr_api_token', token);
 };
 
 // 清除 API Token
 export const clearAPIToken = () => {
-  localStorage.removeItem('frpmgr_api_token');
+  localStorage.removeItem('frpsmgr_api_token');
 };
 
 const client = axios.create({

@@ -8,29 +8,29 @@
 # ============================================================================
 
 services:
-  frpmgrd:
+  frpsmgrd:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
       args:
         VERSION: ${VERSION:-dev}
         BUILD_DATE: ${BUILD_DATE:-unknown}
-    image: frpmgr-server:${VERSION:-dev}
-    container_name: frpmgrd
+    image: frps-manager:${VERSION:-dev}
+    container_name: frpsmgrd
     restart: unless-stopped
     # host network is recommended for frpc so that xtcp / NAT hole
     # punching works correctly. Switch to bridge if you only need plain
     # tcp/http proxies and want stricter isolation.
     network_mode: host
     environment:
-      FRPMGR_API_TOKEN: ${FRPMGR_API_TOKEN:?api token required (set in .env)}
-      FRPMGR_HTTP_ADDR: ":${FRPMGR_HTTP_PORT:-8080}"
-      FRPMGR_CORS_ORIGINS: ${FRPMGR_CORS_ORIGINS:-*}
-      FRPMGR_LOG_LEVEL: ${FRPMGR_LOG_LEVEL:-info}
+      FRPSMGR_API_TOKEN: ${FRPSMGR_API_TOKEN:?api token required (set in .env)}
+      FRPSMGR_HTTP_ADDR: ":${FRPSMGR_HTTP_PORT:-8080}"
+      FRPSMGR_CORS_ORIGINS: ${FRPSMGR_CORS_ORIGINS:-*}
+      FRPSMGR_LOG_LEVEL: ${FRPSMGR_LOG_LEVEL:-info}
     volumes:
       - ./data:/data
     healthcheck:
-      test: ["CMD", "/usr/local/bin/frpmgrd", "health", "-addr", "http://127.0.0.1:${FRPMGR_HTTP_PORT:-8080}"]
+      test: ["CMD", "/usr/local/bin/frpsmgrd", "health", "-addr", "http://127.0.0.1:${FRPSMGR_HTTP_PORT:-8080}"]
       interval: 30s
       timeout: 5s
       retries: 3

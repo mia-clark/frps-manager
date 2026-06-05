@@ -9,7 +9,7 @@ const __dirname = dirname(__filename);
  * Playwright globalSetup — 在所有 worker 启动前调用一次。
  *
  * 职责：
- *   1. 找到 bin/frpmgrd-dev[.exe] 或 bin/frpmgrd[.exe]，塞到 FRPMGRD_BIN env var
+ *   1. 找到 bin/frpsmgrd-dev[.exe] 或 bin/frpsmgrd[.exe]，塞到 FRPSMGRD_BIN env var
  *   2. ensure web/e2e-tmp/ 目录存在（mkdtempSync 要求父目录存在）
  *
  * 不在职责内：
@@ -19,23 +19,23 @@ const __dirname = dirname(__filename);
 export default async function globalSetup() {
   const projectRoot = resolve(__dirname, '..', '..');
   const candidates = [
-    resolve(projectRoot, 'bin', 'frpmgrd-dev.exe'),
-    resolve(projectRoot, 'bin', 'frpmgrd-dev'),
-    resolve(projectRoot, 'bin', 'frpmgrd.exe'),
-    resolve(projectRoot, 'bin', 'frpmgrd'),
+    resolve(projectRoot, 'bin', 'frpsmgrd-dev.exe'),
+    resolve(projectRoot, 'bin', 'frpsmgrd-dev'),
+    resolve(projectRoot, 'bin', 'frpsmgrd.exe'),
+    resolve(projectRoot, 'bin', 'frpsmgrd'),
   ];
   const found = candidates.find((p) => existsSync(p));
   if (!found) {
     throw new Error(
-      `frpmgrd binary not found at any of:\n  ${candidates.join('\n  ')}\n` +
-        `Run \`make build-host\` (or build manually: \`cd web && npm run build; cd .. && go build -o bin/frpmgrd-dev.exe ./cmd/frpmgrd\`) first.`,
+      `frpsmgrd binary not found at any of:\n  ${candidates.join('\n  ')}\n` +
+        `Run \`make build-host\` (or build manually: \`cd web && npm run build; cd .. && go build -o bin/frpsmgrd-dev.exe ./cmd/frpsmgrd\`) first.`,
     );
   }
-  process.env.FRPMGRD_BIN = found;
+  process.env.FRPSMGRD_BIN = found;
 
   const e2eTmp = resolve(__dirname, '..', 'e2e-tmp');
   mkdirSync(e2eTmp, { recursive: true });
 
   // eslint-disable-next-line no-console
-  console.log(`[globalSetup] frpmgrd binary: ${found}`);
+  console.log(`[globalSetup] frpsmgrd binary: ${found}`);
 }

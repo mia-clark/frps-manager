@@ -72,7 +72,7 @@ const Logs: React.FC = () => {
           }
           return {
             id: item.id,
-            name: item.name || item.frpmgr?.name || item.id,
+            name: item.name || item.frpsmgr?.name || item.id,
             status: state,
           };
         }));

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end test for the AutoStart-via-manualStart refactor.
 #
-# Spins up an isolated frpmgrd on an alt port + data dir, exercises every
+# Spins up an isolated frpsmgrd on an alt port + data dir, exercises every
 # behavioral change in the recent fix, and asserts on daemon logs + API
 # responses. Does not touch the running dev environment.
 
@@ -10,7 +10,7 @@ set -uo pipefail
 PORT=${TEST_PORT:-18080}
 TOKEN=${TEST_TOKEN:-e2etest}
 DATA=${TEST_DATA:-tmp/test-autostart}
-BIN=${TEST_BIN:-./frpmgrd-dev.exe}
+BIN=${TEST_BIN:-./frpsmgrd-dev.exe}
 BASE="http://127.0.0.1:${PORT}"
 PASS=0
 FAIL=0
@@ -29,10 +29,10 @@ DAEMON_PID=
 start_daemon() {
   local marker=$1
   : > "${DATA}/daemon.log"
-  FRPMGR_HTTP_ADDR=":${PORT}" \
-  FRPMGR_API_TOKEN="${TOKEN}" \
-  FRPMGR_DATA_DIR="${DATA}" \
-  FRPMGR_LOG_LEVEL=debug \
+  FRPSMGR_HTTP_ADDR=":${PORT}" \
+  FRPSMGR_API_TOKEN="${TOKEN}" \
+  FRPSMGR_DATA_DIR="${DATA}" \
+  FRPSMGR_LOG_LEVEL=debug \
   "${BIN}" serve >>"${DATA}/daemon.log" 2>&1 &
   DAEMON_PID=$!
   for _ in $(seq 1 50); do
@@ -70,9 +70,9 @@ rm -rf "${DATA}"
 mkdir -p "${DATA}/profiles"
 
 # Three fixtures:
-#   auto-on   : no [frpmgr] block at all → manualStart absent → autostart
-#   auto-off  : [frpmgr] manualStart=true → skip on boot
-#   default   : [frpmgr] only with name  → manualStart absent → autostart
+#   auto-on   : no [frpsmgr] block at all → manualStart absent → autostart
+#   auto-off  : [frpsmgr] manualStart=true → skip on boot
+#   default   : [frpsmgr] only with name  → manualStart absent → autostart
 # Server addr points at 127.0.0.1:1 so frp will fail to connect; that's
 # fine — we assert on daemon's *intent to start*, not on the frp client
 # actually staying up.
@@ -80,7 +80,7 @@ cat >"${DATA}/profiles/auto-on.toml" <<'EOF'
 serverAddr = "127.0.0.1"
 serverPort = 1
 
-[frpmgr]
+[frpsmgr]
 name = "auto-on case"
 EOF
 
@@ -88,7 +88,7 @@ cat >"${DATA}/profiles/auto-off.toml" <<'EOF'
 serverAddr = "127.0.0.1"
 serverPort = 1
 
-[frpmgr]
+[frpsmgr]
 name = "auto-off case"
 manualStart = true
 EOF
@@ -97,7 +97,7 @@ cat >"${DATA}/profiles/default.toml" <<'EOF'
 serverAddr = "127.0.0.1"
 serverPort = 1
 
-[frpmgr]
+[frpsmgr]
 name = "default case"
 EOF
 
@@ -176,7 +176,7 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" \
   -X PUT "${BASE}/api/v1/configs/auto-on" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${TOKEN}" \
-  -d '{"config":{"serverAddr":"127.0.0.1","serverPort":1,"frpmgr":{"name":"x","manualStart":false,"autoDelete":false}}}')
+  -d '{"config":{"serverAddr":"127.0.0.1","serverPort":1,"frpsmgr":{"name":"x","manualStart":false,"autoDelete":false}}}')
 if [ "${CODE}" = "400" ]; then
   pass "PUT autoDelete:false  → 400 (strict decoder still rejects, as expected)"
 else
@@ -187,7 +187,7 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" \
   -X PUT "${BASE}/api/v1/configs/auto-on" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${TOKEN}" \
-  -d '{"config":{"serverAddr":"127.0.0.1","serverPort":1,"frpmgr":{"name":"x","manualStart":false,"autoDelete":{"afterDate":"0001-01-01T00:00:00Z"}}}}')
+  -d '{"config":{"serverAddr":"127.0.0.1","serverPort":1,"frpsmgr":{"name":"x","manualStart":false,"autoDelete":{"afterDate":"0001-01-01T00:00:00Z"}}}}')
 if [ "${CODE}" = "200" ]; then
   pass "PUT autoDelete:{...} → 200"
 else
@@ -198,7 +198,7 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" \
   -X PUT "${BASE}/api/v1/configs/auto-on" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${TOKEN}" \
-  -d '{"config":{"serverAddr":"127.0.0.1","serverPort":1,"frpmgr":{"name":"x","manualStart":false}}}')
+  -d '{"config":{"serverAddr":"127.0.0.1","serverPort":1,"frpsmgr":{"name":"x","manualStart":false}}}')
 if [ "${CODE}" = "200" ]; then
   pass "PUT autoDelete omitted → 200 (front-end new payload shape)"
 else
@@ -210,19 +210,19 @@ section "5) PUT manualStart=true persists into TOML"
 # ============================================================
 api -X PUT "${BASE}/api/v1/configs/auto-on" \
   -H "Content-Type: application/json" \
-  -d '{"config":{"serverAddr":"127.0.0.1","serverPort":1,"frpmgr":{"name":"flipped","manualStart":true}}}' >/dev/null
+  -d '{"config":{"serverAddr":"127.0.0.1","serverPort":1,"frpsmgr":{"name":"flipped","manualStart":true}}}' >/dev/null
 
 if grep -q '^manualStart = true' "${DATA}/profiles/auto-on.toml"; then
   pass "TOML file shows 'manualStart = true' after PUT"
 else
   fail "TOML did not persist manualStart=true:"
-  grep -A 5 '\[frpmgr\]' "${DATA}/profiles/auto-on.toml" | sed 's/^/      /'
+  grep -A 5 '\[frpsmgr\]' "${DATA}/profiles/auto-on.toml" | sed 's/^/      /'
 fi
 
 # Reset auto-off back to manualStart=false via API for the next phase.
 api -X PUT "${BASE}/api/v1/configs/auto-off" \
   -H "Content-Type: application/json" \
-  -d '{"config":{"serverAddr":"127.0.0.1","serverPort":1,"frpmgr":{"name":"flipped-off","manualStart":false}}}' >/dev/null
+  -d '{"config":{"serverAddr":"127.0.0.1","serverPort":1,"frpsmgr":{"name":"flipped-off","manualStart":false}}}' >/dev/null
 
 stop_daemon
 sleep 0.3

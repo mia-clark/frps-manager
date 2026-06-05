@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mia-clark/frp-manager-server/internal/manager"
+	"github.com/mia-clark/frps-manager/internal/manager"
 )
 
 // pathID returns the chi URL param "id" or empty string.

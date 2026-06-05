@@ -13,9 +13,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mia-clark/frp-manager-server/internal/eventbus"
-	"github.com/mia-clark/frp-manager-server/pkg/config"
-	"github.com/mia-clark/frp-manager-server/pkg/consts"
+	"github.com/mia-clark/frps-manager/internal/eventbus"
+	"github.com/mia-clark/frps-manager/pkg/config"
+	"github.com/mia-clark/frps-manager/pkg/consts"
 )
 
 // Options configures the Manager.
@@ -209,7 +209,7 @@ func (m *Manager) List() []Snapshot {
 }
 
 // Get returns the snapshot of a single config plus the parsed ServerConfigV1
-// read fresh from disk, and its frpmgr metadata (name/manualStart).
+// read fresh from disk, and its frpsmgr metadata (name/manualStart).
 func (m *Manager) Get(id string) (Snapshot, *config.ServerConfigV1, MgrMeta, error) {
 	inst := m.get(id)
 	if inst == nil {

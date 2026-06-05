@@ -22,7 +22,7 @@ import {
   MenuUnfoldOutlined,
 } from '@ant-design/icons';
 
-const LIST_COMPACT_KEY = 'frpmgr_configs_compact';
+const LIST_COMPACT_KEY = 'frpsmgr_configs_compact';
 import CodeMirror from '@uiw/react-codemirror';
 import { StreamLanguage } from '@codemirror/language';
 import { toml } from '@codemirror/legacy-modes/mode/toml';
@@ -323,7 +323,7 @@ const Configs: React.FC = () => {
     }
   };
 
-  // 加载常规属性：从 GET /configs/{id} 的 env.config.* / env.frpmgr.* 回填（不要用列表快照）
+  // 加载常规属性：从 GET /configs/{id} 的 env.config.* / env.frpsmgr.* 回填（不要用列表快照）
   // 全字段表单使用 flattenServerConfig 把 env.config 展平为扁平字段。
   const loadVisualConfig = async (id: string) => {
     try {
@@ -332,7 +332,7 @@ const Configs: React.FC = () => {
         const env = resp.data as ConfigEnvelope;
         setDetailEnvelope(env);
         const cfg = env.config || {};
-        const mm = env.frpmgr || ({} as MgrMeta);
+        const mm = env.frpsmgr || ({} as MgrMeta);
         const flat = flattenServerConfig(cfg as Record<string, unknown>);
         form.resetFields();
         form.setFieldsValue({
@@ -467,11 +467,11 @@ const Configs: React.FC = () => {
       const baseCfg = (detailEnvelope?.config ?? {}) as Record<string, unknown>;
       const cfg: ServerConfig = { ...baseCfg, ...built } as ServerConfig;
 
-      const frpmgr: MgrMeta = {
+      const frpsmgr: MgrMeta = {
         name: values.name || activeConfigId,
         manualStart: !!values.manualStart,
       };
-      await client.put(`/api/v1/configs/${activeConfigId}`, { config: cfg, frpmgr });
+      await client.put(`/api/v1/configs/${activeConfigId}`, { config: cfg, frpsmgr });
       message.success('配置保存成功！');
       fetchConfigs();
       if (activeConfigId) loadVisualConfig(activeConfigId);
@@ -514,11 +514,11 @@ const Configs: React.FC = () => {
       if (values.authToken) {
         cfg.auth = { method: 'token', token: values.authToken };
       }
-      const frpmgr: MgrMeta = {
+      const frpsmgr: MgrMeta = {
         name: values.name || values.id,
         manualStart: !!values.manualStart,
       };
-      await client.post('/api/v1/configs', { id: values.id, config: cfg, frpmgr });
+      await client.post('/api/v1/configs', { id: values.id, config: cfg, frpsmgr });
       message.success('配置创建成功');
       setNewConfigModalOpen(false);
       newConfigForm.resetFields();

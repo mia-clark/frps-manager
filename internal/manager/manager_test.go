@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mia-clark/frp-manager-server/internal/eventbus"
-	"github.com/mia-clark/frp-manager-server/pkg/config"
+	"github.com/mia-clark/frps-manager/internal/eventbus"
+	"github.com/mia-clark/frps-manager/pkg/config"
 )
 
 func newMgr(t *testing.T) (*Manager, string) {
@@ -41,7 +41,7 @@ func serverCfg(t *testing.T, bindPort int) *config.ServerConfigV1 {
 	return sc
 }
 
-// TestCreateGetRoundTrip: Create 写盘后，Get 能读回 bindPort 与 frpmgr 元数据。
+// TestCreateGetRoundTrip: Create 写盘后，Get 能读回 bindPort 与 frpsmgr 元数据。
 func TestCreateGetRoundTrip(t *testing.T) {
 	m, _ := newMgr(t)
 	if err := m.Create("main", serverCfg(t, 7001), MgrMeta{Name: "主服务端", ManualStart: true}); err != nil {
@@ -56,7 +56,7 @@ func TestCreateGetRoundTrip(t *testing.T) {
 		t.Fatalf("BindPort = %d, want 7001", sc.BindPort)
 	}
 	if mm.Name != "主服务端" || !mm.ManualStart {
-		t.Fatalf("frpmgr meta lost: %+v", mm)
+		t.Fatalf("frpsmgr meta lost: %+v", mm)
 	}
 	if snap.Name != "主服务端" {
 		t.Fatalf("snapshot name = %q, want 主服务端", snap.Name)

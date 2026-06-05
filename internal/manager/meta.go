@@ -10,7 +10,7 @@ import (
 
 // Meta is the persisted daemon-level metadata stored at /data/meta.json.
 // It tracks the user-defined display order. Whether an instance auto-
-// starts on daemon boot is now driven by frpmgr.manualStart inside each
+// starts on daemon boot is now driven by frpsmgr.manualStart inside each
 // config file; the legacy AutoStart list is kept only so old meta.json
 // files round-trip without losing the key.
 type Meta struct {
