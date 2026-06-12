@@ -263,12 +263,30 @@ fetch_stdout() {
 }
 
 # 下载到文件. 用法: fetch_file <url> <dest>
+#   --connect-timeout 8: 死代理 8 秒连不上就快速失败换下一家(不再干等到总超时);
+#   --max-time 120: 给大文件留足传输时间(frps 二进制压缩包约 10MB);
+#   交互式(stderr 是 TTY)显示进度条, 让用户看到在下载; 非交互(自更新写日志)保持
+#   安静, 避免进度条 \r 刷屏污染 update.log。
 fetch_file() {
     if [ "$DOWNLOADER" = "curl" ]; then
-        curl -fSL --progress-bar --max-time 30 "$1" -o "$2"
+        if [ -t 2 ]; then
+            curl -fL --connect-timeout 8 --max-time 120 --progress-bar "$1" -o "$2"
+        else
+            curl -fsSL --connect-timeout 8 --max-time 120 "$1" -o "$2"
+        fi
     else
-        wget -q --show-progress --timeout=30 -O "$2" "$1"
+        if [ -t 2 ]; then
+            wget -q --show-progress --connect-timeout=8 --timeout=120 --tries=1 -O "$2" "$1"
+        else
+            wget -q --connect-timeout=8 --timeout=120 --tries=1 -O "$2" "$1"
+        fi
     fi
+}
+
+# 人类可读文件大小. 用法: _filesize <file>
+_filesize() {
+    [ -f "$1" ] || return 0
+    du -h "$1" 2>/dev/null | cut -f1
 }
 
 # 验证下载文件是合法 tar.gz (防"伪 200": 代理返回 HTML 错误页但 HTTP 200)
@@ -296,29 +314,37 @@ try_download() {
     # 优先级: --proxy/$FRPSMGR_DOWNLOAD_PROXY > 内置数组 > 直连
     if [ -n "$DL_PROXY_OVERRIDE" ]; then
         _proxy="${DL_PROXY_OVERRIDE%/}/"   # 兜底加尾斜杠
-        info "使用指定代理: ${_proxy}"
-        fetch_file "${_proxy}${_gh_url}" "$_dest" 2>/dev/null || true
-        verify_targz "$_dest" && return 0
+        info "使用指定代理: ${_proxy}  下载中…"
+        fetch_file "${_proxy}${_gh_url}" "$_dest" || true
+        verify_targz "$_dest" && { ok "下载完成 (指定代理)  $(_filesize "$_dest")"; return 0; }
         warn "指定代理失败/返回非法包, 回落直连"
         rm -f "$_dest"
     elif [ "$DL_NO_PROXY" != "1" ]; then
+        _n=0
+        _total=$(echo $DL_PROXIES | wc -w)
         for _proxy in $DL_PROXIES; do
-            info "尝试代理: ${_proxy}"
-            fetch_file "${_proxy}${_gh_url}" "$_dest" 2>/dev/null || { rm -f "$_dest"; continue; }
+            _n=$((_n + 1))
+            info "尝试镜像 [${_n}/${_total}]: ${_proxy}  下载中…"
+            if ! fetch_file "${_proxy}${_gh_url}" "$_dest"; then
+                warn "  -> 连不上/超时/HTTP 错误, 换下一家"
+                rm -f "$_dest"
+                continue
+            fi
             if verify_targz "$_dest"; then
-                ok "下载源: ${_proxy}"
+                ok "下载完成 (镜像): ${_proxy}  $(_filesize "$_dest")"
                 return 0
             fi
             warn "  -> 返回非法包 (伪 200?), 跳下一家"
             rm -f "$_dest"
         done
-        warn "全部代理失败, 回落直连 GitHub"
+        warn "全部镜像失败, 回落直连 GitHub"
     fi
 
     # 直连兜底
-    info "直连: ${_gh_url}"
+    info "直连 GitHub 下载中…: ${_gh_url}"
     fetch_file "$_gh_url" "$_dest" || return 1
     verify_targz "$_dest" || { err "直连下载的文件也不是合法 tar.gz"; return 1; }
+    ok "下载完成 (直连)  $(_filesize "$_dest")"
     return 0
 }
 
@@ -507,21 +533,28 @@ download_and_install() {
 
     TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t frpsmgr)"
     _dest="${TMP_DIR}/${_asset}"
-    info "目标: ${_asset} (${VERSION})"
+    info "目标: ${_asset}  (${VERSION}, 多源容错下载)"
 
     # 首选: 自建 gh-raw 代理 (除非 --no-proxy)。逐个域名尝试 {base}/{key}/{tag}/{file}
     # 但用户显式 --proxy 指定单家镜像时让位: 跳过 gh-raw, 直接走下面尊重 --proxy 的 try_download
     _got=0
     if [ "$DL_NO_PROXY" != "1" ] && [ -z "$DL_PROXY_OVERRIDE" ]; then
+        _n=0
+        _total=$(echo $GHRAW_BASES | wc -w)
         for _base in $GHRAW_BASES; do
-            info "尝试代理: ${_base%/}"
-            fetch_file "${_base%/}/${GHRAW_KEY}/${VERSION}/${_asset}" "$_dest" 2>/dev/null || { rm -f "$_dest"; continue; }
+            _n=$((_n + 1))
+            info "尝试 gh-raw 代理 [${_n}/${_total}]: ${_base%/}  下载中…"
+            if ! fetch_file "${_base%/}/${GHRAW_KEY}/${VERSION}/${_asset}" "$_dest"; then
+                warn "  -> 连不上/超时/HTTP 错误, 换下一家"
+                rm -f "$_dest"
+                continue
+            fi
             if verify_targz "$_dest"; then
-                ok "下载源 (代理): ${_base%/}"
+                ok "下载完成 (代理): ${_base%/}  $(_filesize "$_dest")"
                 _got=1
                 break
             fi
-            warn "  -> 返回非法包 (伪 200?), 跳下一家"
+            warn "  -> 返回非法包 (伪 200?), 换下一家"
             rm -f "$_dest"
         done
         [ "$_got" = "1" ] || warn "全部 gh-raw 代理失败, 回落 GitHub 直连/镜像"

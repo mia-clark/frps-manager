@@ -300,21 +300,24 @@ function Invoke-Download {
         Write-Warn '指定代理失败/返回非法包, 回落直连'
         Remove-Item -Force $Dest -ErrorAction SilentlyContinue
     } elseif (-not $NoProxy) {
+        $i = 0
         foreach ($p in $DlProxies) {
-            Write-Info "尝试代理: $p"
-            try { Get-RemoteFile -Url ($p + $GhUrl) -Dest $Dest } catch { Remove-Item -Force $Dest -ErrorAction SilentlyContinue; continue }
+            $i++
+            Write-Info "尝试镜像 [$i/$($DlProxies.Count)]: $p  下载中…"
+            try { Get-RemoteFile -Url ($p + $GhUrl) -Dest $Dest } catch { Write-Warn '  -> 连不上/超时/HTTP 错误, 换下一家'; Remove-Item -Force $Dest -ErrorAction SilentlyContinue; continue }
             if (Test-Zip $Dest) {
-                Write-Ok "下载源: $p"
+                $sz = [math]::Round((Get-Item $Dest).Length / 1MB, 1)
+                Write-Ok "下载完成 (镜像): $p  (${sz}MB)"
                 return $true
             }
             Write-Warn '  -> 返回非法包 (伪 200?), 跳下一家'
             Remove-Item -Force $Dest -ErrorAction SilentlyContinue
         }
-        Write-Warn '全部代理失败, 回落直连 GitHub'
+        Write-Warn '全部镜像失败, 回落直连 GitHub'
     }
 
     # 直连兜底
-    Write-Info "直连: $GhUrl"
+    Write-Info "直连 GitHub 下载中…: $GhUrl"
     try { Get-RemoteFile -Url $GhUrl -Dest $Dest } catch { return $false }
     if (-not (Test-Zip $Dest)) { Write-Err '直连下载的文件也不是合法 zip'; return $false }
     return $true
@@ -434,22 +437,25 @@ function Install-Binary {
     New-Item -ItemType Directory -Force -Path $script:TmpDir | Out-Null
 
     $zipPath = Join-Path $script:TmpDir $asset
-    Write-Info "目标: $asset ($($script:Version))"
+    Write-Info "目标: $asset ($($script:Version), 多源容错下载)"
 
     # 首选: 自建 gh-raw 代理 (除非 -NoProxy)。逐个域名尝试 {base}/{key}/{tag}/{file}
     # 但用户显式 -Proxy 指定单家镜像时让位: 跳过 gh-raw, 直接走下面尊重 -Proxy 的 Invoke-Download
     $got = $false
     if ((-not $NoProxy) -and (-not $Proxy)) {
+        $i = 0
         foreach ($base in $GhRawBases) {
+            $i++
             $b = $base.TrimEnd('/')
-            Write-Info "尝试代理: $b"
-            try { Get-RemoteFile -Url "$b/$GhRawKey/$($script:Version)/$asset" -Dest $zipPath } catch { Remove-Item -Force $zipPath -ErrorAction SilentlyContinue; continue }
+            Write-Info "尝试 gh-raw 代理 [$i/$($GhRawBases.Count)]: $b  下载中…"
+            try { Get-RemoteFile -Url "$b/$GhRawKey/$($script:Version)/$asset" -Dest $zipPath } catch { Write-Warn '  -> 连不上/超时/HTTP 错误, 换下一家'; Remove-Item -Force $zipPath -ErrorAction SilentlyContinue; continue }
             if (Test-Zip $zipPath) {
-                Write-Ok "下载源 (代理): $b"
+                $sz = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
+                Write-Ok "下载完成 (代理): $b  (${sz}MB)"
                 $got = $true
                 break
             }
-            Write-Warn '  -> 返回非法包 (伪 200?), 跳下一家'
+            Write-Warn '  -> 返回非法包 (伪 200?), 换下一家'
             Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
         }
         if (-not $got) { Write-Warn '全部 gh-raw 代理失败, 回落 GitHub 直连/镜像' }
