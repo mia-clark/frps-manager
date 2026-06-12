@@ -24,10 +24,18 @@ CONF=frpsmgrd
 # 生成强随机 16 进制令牌 (48 字符)。取不到随机源时返回空串 (由 ensure_token 拒绝启动)。
 # ---------------------------------------------------------------------------
 gen_token() {
-	# 读 24 字节随机数 -> 48 个 16 进制字符 (od/dd 均为 busybox 默认 applet)。
-	# 用 bs=1 count=24 直读字符设备，避免从管道短读导致长度不定。
 	local t=''
-	[ -r /dev/urandom ] && t="$(dd if=/dev/urandom bs=1 count=24 2>/dev/null | od -An -tx1 2>/dev/null | tr -d ' \n')"
+	if [ -r /dev/urandom ]; then
+		# 主路径：用 tr 从 /dev/urandom 过滤出 48 个 16 进制字符。
+		# tr 是 busybox 必带 applet，且不依赖 od/hexdump —— 部分 OpenWrt/ImmortalWrt
+		# 构建并不包含 od applet（实测 ImmortalWrt 24.10 aarch64 无 od），此前用 od
+		# 的写法在这些设备上产出空串、导致拒绝启动。bs=1 count=48 逐字节读避免管道短读。
+		t="$(tr -dc 'a-f0-9' < /dev/urandom 2>/dev/null | dd bs=1 count=48 2>/dev/null)"
+		# 兜底：tr 异常时，若环境恰好有 od 再试一次旧路径
+		if [ "${#t}" -lt 32 ] && command -v od >/dev/null 2>&1; then
+			t="$(dd if=/dev/urandom bs=1 count=24 2>/dev/null | od -An -tx1 2>/dev/null | tr -d ' \n')"
+		fi
+	fi
 	printf '%s' "$t"
 }
 
