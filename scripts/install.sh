@@ -49,6 +49,30 @@ https://docker.srv0.qzz.io/
 https://docker.966788.xyz/
 "
 
+# ----------------------------------------------------------------------------
+# 自建 GitHub-Release 代理 (gh-raw) 优先通道
+#   - 版本查询: GET {base}/{key}/latest      -> JSON, 取 "tag" 字段
+#   - 资产下载: GET {base}/{key}/{tag}/{file} -> 二进制流
+#   - 7 个等价域名 (2 个 .xyz 主域名在前, 5 个 .qzz.io 备用在后), 任一不可用自动切下一个
+#   - frpsmgrd 二进制的配置键 (key) = frps-mgr-releases
+#   - 可经环境变量覆盖: FRPSMGR_RELEASE_PROXY_BASES (逗号分隔域名) / FRPSMGR_INSTALL_PROXY_KEY (键)
+#   - 该通道为首选; 失败后回落到上面的 DL_PROXIES + GitHub 直连逻辑
+if [ -n "${FRPSMGR_RELEASE_PROXY_BASES:-}" ]; then
+    # 环境变量为逗号分隔, 转成空格分隔供 for 遍历
+    GHRAW_BASES="$(printf '%s' "$FRPSMGR_RELEASE_PROXY_BASES" | tr ',' ' ')"
+else
+    GHRAW_BASES="
+https://gh-raw.966788.xyz
+https://gh-raw.988669.xyz
+https://gh-raw.s03.qzz.io
+https://gh-raw.s04.qzz.io
+https://gh-raw.s05.qzz.io
+https://gh-raw.s06.qzz.io
+https://gh-raw.s07.qzz.io
+"
+fi
+GHRAW_KEY="${FRPSMGR_INSTALL_PROXY_KEY:-frps-mgr-releases}"
+
 # 这些值会在 detect_platform / 参数解析阶段被填充
 OS=""
 ARCH=""
@@ -100,8 +124,8 @@ ${C_BOLD}frpsmgrd 一键安装脚本${C_RST}
   -u, --update          全自动更新到最新版 (保留现有端口/令牌/数据, 仅换二进制并重启)
   -f, --force           配合 --update: 即使已是最新版也强制重装
       --uninstall       卸载 (停止服务 + 删除二进制/服务文件)
-      --proxy <URL>     指定单一下载代理 (如 https://my.mirror/), 跳过内置数组
-      --no-proxy        跳过所有代理, 直连 GitHub 下载
+      --proxy <URL>     指定单一 GitHub 镜像 (如 https://my.mirror/); 下载二进制时跳过 gh-raw 与内置数组, 优先用它
+      --no-proxy        跳过所有代理 (含 gh-raw 自建通道与镜像数组), 直连 GitHub 下载
   -h, --help            显示帮助
 
 参数可任意组合, 已传入的参数不再交互询问。示例:
@@ -119,12 +143,17 @@ ${C_BOLD}frpsmgrd 一键安装脚本${C_RST}
 
 环境变量等价形式 (适合 CI/自动化):
   FRPSMGR_PORT=9000 FRPSMGR_API_TOKEN=xxx ASSUME_YES=1 sh install.sh
-  FRPSMGR_DOWNLOAD_PROXY=https://my.mirror/  # 等价 --proxy
-  FRPSMGR_NO_PROXY=1                          # 等价 --no-proxy
+  FRPSMGR_DOWNLOAD_PROXY=https://my.mirror/   # 等价 --proxy
+  FRPSMGR_NO_PROXY=1                           # 等价 --no-proxy
+  FRPSMGR_RELEASE_PROXY_BASES=https://a,https://b  # 覆盖自建 gh-raw 域名 (逗号分隔)
+  FRPSMGR_INSTALL_PROXY_KEY=frps-mgr-releases  # 覆盖 gh-raw 资产配置键 (key)
 
-下载策略:
-  默认按内置代理数组挨个尝试 (公开代理 4 家在前, 自建 6 家在后), 第一个能
-  下载并解开为合法 tar.gz 的就用; 全部代理失败回落直连 GitHub。
+下载策略 (按优先级回落):
+  1) 首选自建 gh-raw 通道 (默认 7 个域名, key=frps-mgr-releases): 版本与二进制都走
+     {域名}/{key}/... , 任一域名失败/返回非法包自动切下一家;
+  2) 回落内置 GitHub 镜像数组 (公开 4 家在前, 自建 6 家在后), 取第一个能解开为合法包的;
+  3) 再回落直连 GitHub。
+  --proxy 指定单家镜像时跳过第 1 步直接用它; --no-proxy 跳过 1、2 步直连 GitHub。
 EOF
 }
 
@@ -223,11 +252,13 @@ detect_downloader() {
 }
 
 # 下载到标准输出. 用法: fetch_stdout <url>
+# 带超时: 仅用于拉取小 JSON/文本 (版本查询)。给每个 gh-raw 域名设硬上限,
+# 防止单个"黑洞/挂起"代理域名让安装长时间卡在"正在查询最新版本..." (与 ps1 的 -TimeoutSec 15 对齐)
 fetch_stdout() {
     if [ "$DOWNLOADER" = "curl" ]; then
-        curl -fsSL "$1"
+        curl -fsSL --connect-timeout 8 --max-time 20 "$1"
     else
-        wget -qO- "$1"
+        wget -qO- --timeout=20 --tries=1 "$1"
     fi
 }
 
@@ -245,6 +276,15 @@ fetch_file() {
 verify_targz() {
     [ -s "$1" ] || return 1
     tar -tzf "$1" >/dev/null 2>&1
+}
+
+# 校验版本号形如 [v]X.Y.Z, 防止被异常/被污染的 gh-raw 代理返回的脏 tag
+# (含路径片段如 ../../ 等) 被拼进资产文件名/下载 URL 而逃逸出临时目录。
+# 用法: is_version <tag>; 返回 0=合法
+is_version() {
+    # 锚定首尾: 必须整体形如 [v]X.Y.Z(可带 -rc1/+build 之类安全后缀),
+    # 不允许出现 '/'、空格等 -> 杜绝 'v1.2.3/../../x' 这类路径逃逸
+    printf '%s' "$1" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+([-+.][0-9A-Za-z.-]+)?$'
 }
 
 # 智能代理下载: 遍历候选数组, 第一个成功+合法的就用; 全失败回落直连
@@ -362,12 +402,36 @@ resolve_version() {
         return 0
     fi
     info "正在查询最新版本..."
-    _api="https://api.github.com/repos/${REPO}/releases/latest"
-    _tag="$(fetch_stdout "$_api" 2>/dev/null \
-        | grep '"tag_name"' \
-        | head -n1 \
-        | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')" || true
+    _tag=""
+
+    # 首选: 自建 gh-raw 代理 (除非 --no-proxy)。逐个域名尝试, 取 JSON 里的 "tag" 字段
+    # 注: --proxy 是 GitHub 前缀镜像, 对 gh-raw 的 key 端点无效, 故版本查询不因 --proxy 跳过 gh-raw
+    if [ "$DL_NO_PROXY" != "1" ]; then
+        for _base in $GHRAW_BASES; do
+            _tag="$(fetch_stdout "${_base%/}/${GHRAW_KEY}/latest" 2>/dev/null \
+                | grep '"tag"' \
+                | head -n1 \
+                | sed -E 's/.*"tag"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')" || true
+            # 只接受形如 [v]X.Y.Z 的合法 tag; 脏值视该源无效, 继续下一家
+            if [ -n "$_tag" ] && is_version "$_tag"; then
+                ok "版本来源 (代理): ${_base%/}"
+                break
+            fi
+            _tag=""
+        done
+    fi
+
+    # 回落: GitHub API releases/latest (取 "tag_name" 字段)
+    if [ -z "$_tag" ]; then
+        _api="https://api.github.com/repos/${REPO}/releases/latest"
+        _tag="$(fetch_stdout "$_api" 2>/dev/null \
+            | grep '"tag_name"' \
+            | head -n1 \
+            | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')" || true
+    fi
+
     [ -n "$_tag" ] || die "无法获取最新版本, 请用 --version 手动指定 (如 --version v1.2.10)"
+    is_version "$_tag" || die "解析到的版本号非法: '${_tag}' (疑似代理返回异常); 请用 --version 手动指定"
     VERSION="$_tag"
     ok "最新版本: ${C_BOLD}${VERSION}${C_RST}"
 }
@@ -442,8 +506,31 @@ download_and_install() {
     _url="https://github.com/${REPO}/releases/download/${VERSION}/${_asset}"
 
     TMP_DIR="$(mktemp -d 2>/dev/null || mktemp -d -t frpsmgr)"
-    info "目标: ${_url}"
-    try_download "$_url" "${TMP_DIR}/${_asset}" || die "全部下载途径失败 (代理 + 直连)"
+    _dest="${TMP_DIR}/${_asset}"
+    info "目标: ${_asset} (${VERSION})"
+
+    # 首选: 自建 gh-raw 代理 (除非 --no-proxy)。逐个域名尝试 {base}/{key}/{tag}/{file}
+    # 但用户显式 --proxy 指定单家镜像时让位: 跳过 gh-raw, 直接走下面尊重 --proxy 的 try_download
+    _got=0
+    if [ "$DL_NO_PROXY" != "1" ] && [ -z "$DL_PROXY_OVERRIDE" ]; then
+        for _base in $GHRAW_BASES; do
+            info "尝试代理: ${_base%/}"
+            fetch_file "${_base%/}/${GHRAW_KEY}/${VERSION}/${_asset}" "$_dest" 2>/dev/null || { rm -f "$_dest"; continue; }
+            if verify_targz "$_dest"; then
+                ok "下载源 (代理): ${_base%/}"
+                _got=1
+                break
+            fi
+            warn "  -> 返回非法包 (伪 200?), 跳下一家"
+            rm -f "$_dest"
+        done
+        [ "$_got" = "1" ] || warn "全部 gh-raw 代理失败, 回落 GitHub 直连/镜像"
+    fi
+
+    # 回落: 沿用既有 try_download (FRPSMGR_DOWNLOAD_PROXY / DL_PROXIES / GitHub 直连)
+    if [ "$_got" != "1" ]; then
+        try_download "$_url" "$_dest" || die "全部下载途径失败 (gh-raw 代理 + 镜像 + 直连)"
+    fi
 
     info "解压安装包..."
     tar -xzf "${TMP_DIR}/${_asset}" -C "$TMP_DIR" || die "解压失败"

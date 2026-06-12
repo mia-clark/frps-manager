@@ -16,6 +16,9 @@
 #
 # 环境变量 (等价于参数, 便于自动化):
 #   $env:FRPSMGR_PORT=9000; $env:FRPSMGR_API_TOKEN='xxx'; $env:FRPSMGR_VERSION='v1.2.14'; $env:ASSUME_YES=1
+#   $env:FRPSMGR_RELEASE_PROXY_BASES='https://a,https://b'  # 覆盖自建 gh-raw 域名 (逗号分隔)
+#   $env:FRPSMGR_INSTALL_PROXY_KEY='frps-mgr-releases'      # 覆盖 gh-raw 资产配置键 (key)
+#   $env:FRPSMGR_DOWNLOAD_PROXY='https://my.mirror/'        # 等价 -Proxy; $env:FRPSMGR_NO_PROXY=1 等价 -NoProxy
 # =============================================================================
 
 [CmdletBinding()]
@@ -66,6 +69,27 @@ $DlProxies = @(
     'https://docker.966788.xyz/'
 )
 
+# 自建 GitHub-Release 代理 (gh-raw) 优先通道
+#   版本查询: GET {base}/{key}/latest      -> JSON, 取 .tag
+#   资产下载: GET {base}/{key}/{tag}/{file} -> 二进制流
+#   frpsmgrd 二进制的配置键 (key) = frps-mgr-releases; 该通道为首选, 失败后回落 DlProxies + 直连
+#   可经环境变量覆盖: FRPSMGR_RELEASE_PROXY_BASES (逗号分隔域名) / FRPSMGR_INSTALL_PROXY_KEY (键)
+if ($env:FRPSMGR_RELEASE_PROXY_BASES) {
+    $GhRawBases = $env:FRPSMGR_RELEASE_PROXY_BASES -split ',' |
+        ForEach-Object { $_.Trim() } | Where-Object { $_ }
+} else {
+    $GhRawBases = @(
+        'https://gh-raw.966788.xyz',
+        'https://gh-raw.988669.xyz',
+        'https://gh-raw.s03.qzz.io',
+        'https://gh-raw.s04.qzz.io',
+        'https://gh-raw.s05.qzz.io',
+        'https://gh-raw.s06.qzz.io',
+        'https://gh-raw.s07.qzz.io'
+    )
+}
+$GhRawKey = if ($env:FRPSMGR_INSTALL_PROXY_KEY) { $env:FRPSMGR_INSTALL_PROXY_KEY } else { 'frps-mgr-releases' }
+
 # 运行期填充
 $script:Arch        = ''
 $script:BinPath     = Join-Path $InstallDir $BinName
@@ -107,8 +131,8 @@ frpsmgrd 一键安装脚本 (Windows)
   -Update          全自动更新到最新版 (保留现有端口/令牌/数据, 仅换二进制并重启)
   -Force           配合 -Update: 即使已是最新版也强制重装
   -Uninstall       卸载 (停止/删除服务 + 删除二进制)
-  -Proxy <URL>     指定单一下载代理 (如 https://my.mirror/), 跳过内置数组
-  -NoProxy         跳过所有代理, 直连 GitHub 下载
+  -Proxy <URL>     指定单一 GitHub 镜像 (如 https://my.mirror/); 下载二进制时跳过 gh-raw 与内置数组, 优先用它
+  -NoProxy         跳过所有代理 (含 gh-raw 自建通道与镜像数组), 直连 GitHub 下载
   -Help            显示帮助
 
 示例:
@@ -122,9 +146,18 @@ frpsmgrd 一键安装脚本 (Windows)
   install.ps1 -Uninstall                   # 卸载
   install.ps1 -NoProxy                     # 跳过代理直连 GitHub
 
-下载策略:
-  默认按内置代理数组挨个尝试 (公开代理 4 家在前, 自建 6 家在后), 第一个能
-  下载并解开为合法 zip 的就用; 全部代理失败回落直连 GitHub。
+环境变量:
+  `$env:FRPSMGR_RELEASE_PROXY_BASES = 'https://a,https://b'  # 覆盖自建 gh-raw 域名 (逗号分隔)
+  `$env:FRPSMGR_INSTALL_PROXY_KEY   = 'frps-mgr-releases'    # 覆盖 gh-raw 资产配置键 (key)
+  `$env:FRPSMGR_DOWNLOAD_PROXY      = 'https://my.mirror/'   # 等价 -Proxy
+  `$env:FRPSMGR_NO_PROXY            = '1'                    # 等价 -NoProxy
+
+下载策略 (按优先级回落):
+  1) 首选自建 gh-raw 通道 (默认 7 个域名, key=frps-mgr-releases): 版本与二进制都走
+     {域名}/{key}/... , 任一域名失败/返回非法包自动切下一家;
+  2) 回落内置 GitHub 镜像数组 (公开 4 家在前, 自建 6 家在后), 取第一个能解开为合法 zip 的;
+  3) 再回落直连 GitHub。
+  -Proxy 指定单家镜像时跳过第 1 步直接用它; -NoProxy 跳过 1、2 步直连 GitHub。
 "@
 }
 
@@ -297,14 +330,38 @@ function Resolve-Version {
         return
     }
     Write-Info '正在查询最新版本...'
-    try {
-        $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" `
-            -Headers @{ 'User-Agent' = 'frpsmgrd-installer' } -UseBasicParsing
-        $script:Version = $rel.tag_name
-    } catch {
-        Die '无法获取最新版本, 请用 -Version 手动指定 (如 -Version v1.2.14)'
+
+    # 首选: 自建 gh-raw 代理 (除非 -NoProxy)。逐个域名尝试, 取 JSON 里的 .tag 字段
+    if (-not $NoProxy) {
+        foreach ($base in $GhRawBases) {
+            $b = $base.TrimEnd('/')
+            try {
+                $rel = Invoke-RestMethod -Uri "$b/$GhRawKey/latest" `
+                    -Headers @{ 'User-Agent' = 'frpsmgrd-installer' } -UseBasicParsing -TimeoutSec 15
+                # 只接受整体形如 [v]X.Y.Z 的合法 tag (锚定首尾, 禁 '/' 空格);
+                # 防止被污染代理返回的脏值/路径片段拼进下载 URL
+                if ($rel.tag -and $rel.tag -match '^v?\d+\.\d+\.\d+([-+.][0-9A-Za-z.-]+)?$') {
+                    $script:Version = $rel.tag
+                    Write-Ok "版本来源 (代理): $b"
+                    break
+                }
+            } catch { }
+        }
     }
+
+    # 回落: GitHub API releases/latest (取 .tag_name 字段)
+    if (-not $script:Version) {
+        try {
+            $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" `
+                -Headers @{ 'User-Agent' = 'frpsmgrd-installer' } -UseBasicParsing -TimeoutSec 15
+            $script:Version = $rel.tag_name
+        } catch {
+            Die '无法获取最新版本, 请用 -Version 手动指定 (如 -Version v1.2.14)'
+        }
+    }
+
     if (-not $script:Version) { Die '无法解析最新版本号, 请用 -Version 手动指定' }
+    if ($script:Version -notmatch '^v?\d+\.\d+\.\d+([-+.][0-9A-Za-z.-]+)?$') { Die "解析到的版本号非法: '$($script:Version)' (疑似代理返回异常); 请用 -Version 手动指定" }
     Write-Ok "最新版本: $($script:Version)"
 }
 
@@ -377,9 +434,32 @@ function Install-Binary {
     New-Item -ItemType Directory -Force -Path $script:TmpDir | Out-Null
 
     $zipPath = Join-Path $script:TmpDir $asset
-    Write-Info "目标: $url"
-    if (-not (Invoke-Download -GhUrl $url -Dest $zipPath)) {
-        Die '全部下载途径失败 (代理 + 直连), 请检查网络或版本号'
+    Write-Info "目标: $asset ($($script:Version))"
+
+    # 首选: 自建 gh-raw 代理 (除非 -NoProxy)。逐个域名尝试 {base}/{key}/{tag}/{file}
+    # 但用户显式 -Proxy 指定单家镜像时让位: 跳过 gh-raw, 直接走下面尊重 -Proxy 的 Invoke-Download
+    $got = $false
+    if ((-not $NoProxy) -and (-not $Proxy)) {
+        foreach ($base in $GhRawBases) {
+            $b = $base.TrimEnd('/')
+            Write-Info "尝试代理: $b"
+            try { Get-RemoteFile -Url "$b/$GhRawKey/$($script:Version)/$asset" -Dest $zipPath } catch { Remove-Item -Force $zipPath -ErrorAction SilentlyContinue; continue }
+            if (Test-Zip $zipPath) {
+                Write-Ok "下载源 (代理): $b"
+                $got = $true
+                break
+            }
+            Write-Warn '  -> 返回非法包 (伪 200?), 跳下一家'
+            Remove-Item -Force $zipPath -ErrorAction SilentlyContinue
+        }
+        if (-not $got) { Write-Warn '全部 gh-raw 代理失败, 回落 GitHub 直连/镜像' }
+    }
+
+    # 回落: 沿用既有 Invoke-Download (-Proxy / DlProxies / GitHub 直连)
+    if (-not $got) {
+        if (-not (Invoke-Download -GhUrl $url -Dest $zipPath)) {
+            Die '全部下载途径失败 (gh-raw 代理 + 镜像 + 直连), 请检查网络或版本号'
+        }
     }
 
     Write-Info '解压安装包...'
