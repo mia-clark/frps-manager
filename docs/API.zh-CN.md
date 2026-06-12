@@ -713,8 +713,10 @@ Query：
 
 `multipart/form-data` 的 `file` 字段，≤ 32 MiB，内含 `*.toml/*.ini/*.conf`。重名覆盖。
 
+若包内含 `meta.json`（由 9.6 导出的备份自带），配置就位后会一并还原**品牌**（app_name/app_subtitle/html_title）与**实例显示顺序**（sort）；`branding_restored` / `order_restored` 表示是否实际还原。其余（log_view_since/names/manual）不动。
+
 ```json
-{ "imported": ["edge-tokyo", "edge-osaka"] }
+{ "imported": ["edge-tokyo", "edge-osaka"], "branding_restored": true, "order_restored": true }
 ```
 
 ### 9.5 `GET /api/v1/configs/{id}/export` — 单实例下载
@@ -723,7 +725,7 @@ Query：
 
 ### 9.6 `GET /api/v1/export/all` — 全部 ZIP
 
-`Content-Type: application/zip`，`Content-Disposition: attachment; filename="frps-manager-export-YYYYmmdd-HHMMSS.zip"`，内含 `profiles/*.{toml,ini,conf}`。
+`Content-Type: application/zip`，`Content-Disposition: attachment; filename="frps-manager-export-YYYYmmdd-HHMMSS.zip"`，内含 `profiles/*.{toml,ini,conf}` **以及 `meta.json`**（携带品牌 + 实例排序）。因此备份自包含：换机/重装后用 9.4 导入即可一并还原品牌与顺序。
 
 ---
 

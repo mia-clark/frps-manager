@@ -871,6 +871,10 @@ paths:
     post:
       tags: [import-export]
       summary: 批量导入 ZIP 备份（multipart）
+      description: >
+        从归档内 *.toml/*.ini/*.conf 还原配置。若归档含 meta.json（由 /export/all 导出
+        的备份自带），会在配置就位后一并还原**品牌**(app_name/app_subtitle/html_title)
+        与**实例显示顺序**(sort)；branding_restored / order_restored 表示是否实际还原。
       requestBody:
         required: true
         content:
@@ -892,6 +896,8 @@ paths:
                   imported:
                     type: array
                     items: { type: string }
+                  branding_restored: { type: boolean, description: 是否从备份还原了品牌 }
+                  order_restored: { type: boolean, description: 是否从备份还原了实例排序 }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
   /api/v1/configs/{id}/export:
@@ -912,6 +918,9 @@ paths:
     get:
       tags: [import-export]
       summary: 下载全部配置为 ZIP
+      description: >
+        ZIP 内含 profiles/*.toml 以及 meta.json（携带品牌 + 实例排序），因此备份是
+        自包含的：换机器或重装后用 /import/zip 导入即可一并还原品牌与顺序。
       responses:
         '200':
           description: OK

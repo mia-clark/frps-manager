@@ -125,8 +125,18 @@ func (h *ImportExportHandler) ImportZIP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	imported := []string{}
+	var metaRaw []byte
 	for _, zf := range zr.File {
 		name := filepath.Base(zf.Name)
+		// meta.json carries the operator branding + display order (see ExportAll) —
+		// capture it and re-apply after the configs are in place.
+		if name == "meta.json" {
+			if rc, err := zf.Open(); err == nil {
+				metaRaw, _ = io.ReadAll(io.LimitReader(rc, 4<<20))
+				rc.Close()
+			}
+			continue
+		}
 		ext := strings.ToLower(filepath.Ext(name))
 		if ext != ".toml" && ext != ".ini" && ext != ".conf" {
 			continue
@@ -147,7 +157,20 @@ func (h *ImportExportHandler) ImportZIP(w http.ResponseWriter, r *http.Request) 
 		}
 		imported = append(imported, id)
 	}
-	WriteJSON(w, http.StatusOK, map[string]any{"imported": imported})
+
+	// 配置就位后再还原 meta（品牌 + 排序），这样 Reorder 能解析到刚导入的 id。
+	brandingRestored, orderRestored := false, false
+	if len(metaRaw) > 0 {
+		var err error
+		if brandingRestored, orderRestored, err = h.m.ImportMeta(metaRaw); err != nil {
+			h.log.Warn("restore meta from import failed", slog.Any("err", err))
+		}
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{
+		"imported":          imported,
+		"branding_restored": brandingRestored,
+		"order_restored":    orderRestored,
+	})
 }
 
 // ExportConfig serves the raw config bytes as a download.
@@ -162,7 +185,9 @@ func (h *ImportExportHandler) ExportConfig(w http.ResponseWriter, r *http.Reques
 	_, _ = w.Write(b)
 }
 
-// ExportAll returns a zip archive of every config file plus meta.json.
+// ExportAll returns a zip archive of every config file plus meta.json, so a
+// backup also carries the operator's branding and display order. Import via
+// /import/zip restores the configs and re-applies branding/order.
 func (h *ImportExportHandler) ExportAll(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="frps-manager-export-%s.zip"`, time.Now().UTC().Format("20060102-150405")))
@@ -185,6 +210,14 @@ func (h *ImportExportHandler) ExportAll(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 		_, _ = fw.Write(raw)
+	}
+
+	// 捆绑 meta.json（品牌 / 排序），使备份自包含。尽力而为：meta.json 缺失/不可读
+	// 时只产出仅含配置的归档。
+	if metaRaw, err := os.ReadFile(h.m.MetaPath()); err == nil {
+		if fw, err := zw.Create("meta.json"); err == nil {
+			_, _ = fw.Write(metaRaw)
+		}
 	}
 }
 

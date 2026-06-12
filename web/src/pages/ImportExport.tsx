@@ -84,7 +84,16 @@ const ImportExport: React.FC = () => {
     onChange(info: any) {
       const { status } = info.file;
       if (status === 'done') {
-        message.success(`${info.file.name} ZIP 备份包恢复成功`);
+        const resp = info.file.response || {};
+        const n = Array.isArray(resp.imported) ? resp.imported.length : 0;
+        const extra = [resp.branding_restored ? '品牌' : '', resp.order_restored ? '排序' : '']
+          .filter(Boolean).join(' / ');
+        if (extra) {
+          message.success(`${info.file.name} 恢复成功：导入 ${n} 个配置，${extra}已一并恢复，正在刷新以生效…`);
+          setTimeout(() => window.location.reload(), 1000);
+        } else {
+          message.success(`${info.file.name} 备份包恢复成功：导入 ${n} 个配置`);
+        }
       } else if (status === 'error') {
         message.error(`${info.file.name} 备份包解析失败，请确认文件格式`);
       }

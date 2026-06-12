@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, type DragEvent, type CSSProperties } from 'react';
 import {
   Card, Row, Col, Button, Badge, Space, Typography, Popconfirm,
   Tabs, Form, Input, InputNumber, Switch, Modal,
@@ -21,6 +21,7 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   FileTextOutlined,
+  HolderOutlined,
 } from '@ant-design/icons';
 
 const LIST_COMPACT_KEY = 'frpsmgr_configs_compact';
@@ -82,6 +83,10 @@ const Configs: React.FC = () => {
   const [activeConfigId, setActiveConfigId] = useState<string>('');
   const [statusLoading, setStatusLoading] = useState<Record<string, boolean>>({});
 
+  // 左栏实例列表拖拽排序（原生 HTML5 DnD，无需额外依赖）
+  const configDragIndexRef = useRef<number | null>(null);
+  const [configDragOverIndex, setConfigDragOverIndex] = useState<number | null>(null);
+
   // 选项卡：常规配置（可视化）/ 高级 TOML / 运行日志
   const [activeTab, setActiveTab] = useState<string>('visual');
 
@@ -134,6 +139,25 @@ const Configs: React.FC = () => {
       }
     } catch {
       message.error('无法获取配置列表');
+    }
+  };
+
+  // 实例拖拽排序：仅卡内手柄(HolderOutlined)可发起；乐观更新本地顺序，再把完整
+  // id 顺序持久化到 meta.sort（POST /configs/reorder）；失败回滚重拉。
+  const handleConfigReorder = async (dropIndex: number) => {
+    const from = configDragIndexRef.current;
+    configDragIndexRef.current = null;
+    setConfigDragOverIndex(null);
+    if (from === null || from === dropIndex) return;
+    const next = [...configs];
+    const [moved] = next.splice(from, 1);
+    next.splice(dropIndex, 0, moved);
+    setConfigs(next);
+    try {
+      await client.post('/api/v1/configs/reorder', { order: next.map((c) => c.id) });
+    } catch {
+      message.error('实例排序保存失败，已回滚');
+      fetchConfigs();
     }
   };
 
@@ -485,14 +509,40 @@ const Configs: React.FC = () => {
             ) : (
               <List
                 dataSource={configs}
-                renderItem={(item) => {
+                renderItem={(item, index) => {
                   const isActive = item.id === activeConfigId;
                   const isRunning = item.state === 'started';
 
+                  // 拖拽排序：整张卡片是放置目标，仅卡内手柄可发起拖拽，其他区域(点击=选中)不触发。
+                  const dropProps = {
+                    onDragOver: (e: DragEvent<HTMLDivElement>) => {
+                      if (configDragIndexRef.current === null) return;
+                      e.preventDefault();
+                      if (configDragOverIndex !== index) setConfigDragOverIndex(index);
+                    },
+                    onDrop: (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); handleConfigReorder(index); },
+                  };
+                  const dropStyle: CSSProperties = configDragOverIndex === index
+                    ? { outline: `2px dashed ${token.colorPrimary}`, outlineOffset: 1, borderRadius: 10 }
+                    : {};
+                  const dragHandle = (
+                    <span
+                      draggable
+                      title="拖动排序"
+                      onClick={(e) => e.stopPropagation()}
+                      onDragStart={(e: DragEvent<HTMLSpanElement>) => { configDragIndexRef.current = index; e.dataTransfer.effectAllowed = 'move'; }}
+                      onDragEnd={() => { configDragIndexRef.current = null; setConfigDragOverIndex(null); }}
+                      style={{ cursor: 'grab', color: token.colorTextQuaternary, display: 'inline-flex', flex: '0 0 auto' }}
+                    >
+                      <HolderOutlined />
+                    </span>
+                  );
+
                   if (compactList) {
                     return (
+                      <div {...dropProps} style={dropStyle}>
                       <Dropdown menu={buildContextMenu(item)} trigger={['contextMenu']}>
-                        <Tooltip title={`${item.name || item.id} (ID: ${item.id}) · 右键可重启 / 克隆 / 导出 / 删除`} placement="right">
+                        <Tooltip title={`${item.name || item.id} (ID: ${item.id}) · 拖动手柄排序 · 右键可重启 / 克隆 / 导出 / 删除`} placement="right">
                           <Card
                             hoverable
                             size="small"
@@ -508,6 +558,7 @@ const Configs: React.FC = () => {
                             styles={{ body: { padding: '8px 10px' } }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              {dragHandle}
                               <Badge
                                 status={
                                   item.state === 'started' ? 'success'
@@ -533,10 +584,12 @@ const Configs: React.FC = () => {
                           </Card>
                         </Tooltip>
                       </Dropdown>
+                      </div>
                     );
                   }
 
                   return (
+                    <div {...dropProps} style={dropStyle}>
                     <Dropdown menu={buildContextMenu(item)} trigger={['contextMenu']}>
                       <Card
                         hoverable
@@ -553,9 +606,12 @@ const Configs: React.FC = () => {
                         styles={{ body: { padding: 16 } }}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
-                          <div>
-                            <Text strong style={{ fontSize: '15px' }}>{item.name || item.id}</Text>
-                            <div><Text type="secondary" style={{ fontSize: '12px' }}>ID: {item.id}</Text></div>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
+                            <span style={{ marginTop: 2 }}>{dragHandle}</span>
+                            <div style={{ minWidth: 0 }}>
+                              <Text strong style={{ fontSize: '15px' }}>{item.name || item.id}</Text>
+                              <div><Text type="secondary" style={{ fontSize: '12px' }}>ID: {item.id}</Text></div>
+                            </div>
                           </div>
                           {getStatusBadge(item.state)}
                         </div>
@@ -628,6 +684,7 @@ const Configs: React.FC = () => {
                         </div>
                       </Card>
                     </Dropdown>
+                    </div>
                   );
                 }}
               />

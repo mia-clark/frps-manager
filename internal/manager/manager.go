@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -400,6 +401,10 @@ func (m *Manager) Reorder(order []string) error {
 // ProfilesDir reports the directory the manager owns.
 func (m *Manager) ProfilesDir() string { return m.opts.ProfilesDir }
 
+// MetaPath reports the on-disk path of meta.json (branding, sort, …). Used by
+// the export endpoint so a backup carries the operator's branding/order too.
+func (m *Manager) MetaPath() string { return m.opts.MetaPath }
+
 // LogPath returns the per-instance log file path.
 func (m *Manager) LogPath(id string) string {
 	return filepath.Join(m.opts.LogsDir, id+".log")
@@ -509,6 +514,46 @@ func (m *Manager) SetBranding(in Branding) (Branding, error) {
 		return Branding{}, err
 	}
 	return in.Effective(), nil
+}
+
+// ImportMeta parses a meta.json blob (from an /export/all backup) and restores
+// the operator branding and the instance display order from it. Call it AFTER
+// the configs themselves are in place so Reorder can resolve the ids.
+//
+// It deliberately ignores log_view_since / names / manual (transient/instance-
+// specific). Sort is restored because preserving the instance order across an
+// export→import to another host is an explicit goal; Reorder keeps only ids
+// that exist now, and any imported config not listed falls to the end.
+//
+// Returns whether a non-empty branding and a non-empty order were applied; a
+// failure on one is recorded but never blocks the other (first error returned).
+func (m *Manager) ImportMeta(raw []byte) (brandingRestored, orderRestored bool, err error) {
+	var meta Meta
+	if e := json.Unmarshal(raw, &meta); e != nil {
+		return false, false, e
+	}
+	if meta.Branding != nil {
+		b := *meta.Branding
+		if strings.TrimSpace(b.AppName) != "" ||
+			strings.TrimSpace(b.AppSubtitle) != "" ||
+			strings.TrimSpace(b.HTMLTitle) != "" {
+			if _, e := m.SetBranding(b); e != nil {
+				err = e
+			} else {
+				brandingRestored = true
+			}
+		}
+	}
+	if len(meta.Sort) > 0 {
+		if e := m.Reorder(meta.Sort); e != nil {
+			if err == nil {
+				err = e
+			}
+		} else {
+			orderRestored = true
+		}
+	}
+	return brandingRestored, orderRestored, err
 }
 
 // truncateRunes caps s to at most max runes (not bytes), so multi-byte CJK
