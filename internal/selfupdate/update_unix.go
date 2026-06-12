@@ -22,7 +22,18 @@ func spawnUpdater(u *Updater, mode Mode, targetVersion string) error {
 	shellCmd := buildUnixUpdateCmd(u, targetVersion)
 
 	if mode == ModeSystemd && hasExec("systemd-run") {
-		args := []string{"--collect", "--unit", "frpsmgrd-selfupdate", "/bin/sh", "-c", shellCmd}
+		// `--collect` (systemd ≥ 236) garbage-collects the transient unit even
+		// when it fails, so a later run can reuse the fixed unit name. Older
+		// systemd (CentOS/RHEL 7 = 219, Ubuntu 16.04 = 229 …) rejects the flag
+		// with "unrecognized option '--collect'", aborting the update before it
+		// starts. Add it only when supported; otherwise reset any stale unit of
+		// the same name first so a re-run after a prior failure won't conflict.
+		args := []string{"--unit", "frpsmgrd-selfupdate", "/bin/sh", "-c", shellCmd}
+		if systemdRunSupportsCollect() {
+			args = append([]string{"--collect"}, args...)
+		} else {
+			_ = exec.Command("systemctl", "reset-failed", "frpsmgrd-selfupdate.service").Run()
+		}
 		out, err := exec.Command("systemd-run", args...).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("systemd-run failed: %v: %s", err, strings.TrimSpace(string(out)))
@@ -42,6 +53,17 @@ func spawnUpdater(u *Updater, mode Mode, targetVersion string) error {
 	}
 	_ = cmd.Process.Release()
 	return nil
+}
+
+// systemdRunSupportsCollect reports whether the local systemd-run understands
+// the --collect flag (added in systemd v236). It probes `systemd-run --help`
+// once at update time, which exits 0 and lists every supported option.
+func systemdRunSupportsCollect() bool {
+	out, err := exec.Command("systemd-run", "--help").CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "--collect")
 }
 
 func buildUnixUpdateCmd(u *Updater, targetVersion string) string {
