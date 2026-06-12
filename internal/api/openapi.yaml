@@ -172,6 +172,15 @@ paths:
         '400': { description: 当前部署不支持自更新 }
         '409': { description: 已是最新版本（未带 force=1）}
         '502': { description: 无法获取最新版本 }
+  /api/v1/system/update/log:
+    get:
+      tags: [system]
+      summary: 读取当前自更新日志
+      description: >
+        返回 update.log 的尾部，供网页实时显示自更新步骤（下载/解压/安装/重启）。
+        每次 POST /system/update 启动时会重置为全新表头。body { content: string }。
+      responses:
+        '200': { description: 'OK — body { content: string }' }
   /api/docs:
     get:
       tags: [docs]

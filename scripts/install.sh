@@ -104,6 +104,24 @@ warn()  { printf "%b\n" "${C_YLW}[!]${C_RST} $*"; }
 err()   { printf "%b\n" "${C_RED}[x]${C_RST} $*" >&2; }
 die()   { err "$*"; exit 1; }
 
+# 阶段进度头: 配合 PHASE_TOTAL 打印 "▶ [N/M] 描述", 让安装/更新有整体进度感。
+# 写 update.log(非 TTY)时颜色码为空, 网页日志/管道里就是干净的 "▶ [N/M] …"。
+PHASE_N=0
+PHASE_TOTAL=0
+phase() {
+    PHASE_N=$((PHASE_N + 1))
+    printf "\n%b\n" "${C_BLU}${C_BOLD}▶ [${PHASE_N}/${PHASE_TOTAL}] $*${C_RST}"
+}
+
+# 计时: START_TS 在 do_install/do_update 开头设置; elapsed 返回 "(耗时 Xs)" 或空。
+START_TS=0
+elapsed() {
+    [ "$START_TS" != "0" ] || return 0
+    _now="$(date +%s 2>/dev/null || echo 0)"
+    [ "$_now" != "0" ] || return 0
+    printf "(耗时 %ss)" "$((_now - START_TS))"
+}
+
 cleanup() { [ -n "$TMP_DIR" ] && [ -d "$TMP_DIR" ] && rm -rf "$TMP_DIR"; return 0; }
 trap cleanup EXIT INT TERM
 
@@ -1156,19 +1174,28 @@ health_check() {
 # 安装总流程
 # ----------------------------------------------------------------------------
 do_install() {
-    printf "%b\n" "${C_BOLD}=== frpsmgrd 一键安装 ===${C_RST}"
+    START_TS="$(date +%s 2>/dev/null || echo 0)"
+    printf "%b\n" "${C_BOLD}═══════════ frpsmgrd 一键安装 ═══════════${C_RST}"
+    PHASE_N=0; PHASE_TOTAL=7
+    phase "检测系统环境"
     detect_platform
     detect_downloader
     ensure_root
+    phase "解析版本与参数"
     resolve_version
     resolve_port
     resolve_token
     confirm_install
+    phase "下载二进制"
     download_and_install
+    phase "写入运行配置"
     write_env_file
+    phase "注册系统服务与管理命令"
     setup_service
     install_cli
+    phase "启动并健康检查"
     health_check
+    phase "完成"
     print_summary
 }
 
@@ -1258,7 +1285,7 @@ print_url_line() {
 }
 
 print_summary() {
-    printf "\n%b\n" "${C_GRN}${C_BOLD}✓ 安装完成!${C_RST}"
+    printf "\n%b\n" "${C_GRN}${C_BOLD}✓ 安装完成!${C_RST} $(elapsed)"
     printf "%b\n" "────────────────────────────────────────────"
     print_url_line "访问地址" "$PORT"
     print_url_line "API 文档" "$PORT" "/api/docs"
@@ -1274,7 +1301,10 @@ print_summary() {
 # 全自动更新流程 (保留现有端口/令牌/数据, 仅替换二进制并重启服务)
 # ----------------------------------------------------------------------------
 do_update() {
-    printf "%b\n" "${C_BOLD}=== frpsmgrd 全自动更新 ===${C_RST}"
+    START_TS="$(date +%s 2>/dev/null || echo 0)"
+    printf "%b\n" "${C_BOLD}═══════════ frpsmgrd 全自动更新 ═══════════${C_RST}"
+    PHASE_N=0; PHASE_TOTAL=5
+    phase "检测环境与当前版本"
     detect_platform
     detect_downloader
     ensure_root
@@ -1286,6 +1316,7 @@ do_update() {
     _cur="$(get_installed_version)"
     info "当前已安装版本: ${C_BOLD}${_cur:-未知}${C_RST}"
 
+    phase "解析目标版本"
     resolve_version                 # 解析目标版本 (默认最新, 或 -v 指定)
     _target="${VERSION#v}"
 
@@ -1296,10 +1327,13 @@ do_update() {
     fi
 
     info "准备更新: ${C_BOLD}${_cur:-?}${C_RST} -> ${C_BOLD}${_target}${C_RST}"
+    phase "下载二进制"
     download_and_install            # 下载并覆盖二进制 (不动配置)
+    phase "刷新管理命令并重启服务"
     install_cli                     # 顺带刷新管理命令 fms 到最新
     restart_service                 # 重启以加载新二进制
 
+    phase "健康检查并完成"
     # 尽力做一次健康检查 (端口取自现有配置)
     PORT="$(read_env_port)"
     if [ -n "$PORT" ]; then
@@ -1308,7 +1342,7 @@ do_update() {
         warn "未能读取到现有端口, 跳过健康检查 (服务应已重启)"
     fi
 
-    printf "\n%b\n" "${C_GRN}${C_BOLD}✓ 更新完成!${C_RST} 版本: ${_target}"
+    printf "\n%b\n" "${C_GRN}${C_BOLD}✓ 更新完成!${C_RST} 版本: ${_target}  $(elapsed)"
     if [ -n "$PORT" ]; then
         PUBLIC_IPS_CACHED=0
         print_url_line "访问地址" "$PORT"

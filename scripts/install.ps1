@@ -108,6 +108,20 @@ function Write-Warn { param([string]$m) Write-Host '[!] ' -ForegroundColor Yello
 function Write-Err  { param([string]$m) Write-Host '[x] ' -ForegroundColor Red    -NoNewline; Write-Host $m }
 function Die        { param([string]$m) Write-Err $m; Cleanup; exit 1 }
 
+# 阶段进度头: "▶ [N/M] 描述", 让安装/更新有整体进度感。
+$script:PhaseN = 0
+$script:PhaseTotal = 0
+$script:StartTs = $null
+function Write-Phase { param([string]$m)
+    $script:PhaseN++
+    Write-Host ''
+    Write-Host "▶ [$($script:PhaseN)/$($script:PhaseTotal)] $m" -ForegroundColor Cyan
+}
+function Get-Elapsed {
+    if (-not $script:StartTs) { return '' }
+    return "(耗时 $([math]::Round(((Get-Date) - $script:StartTs).TotalSeconds))s)"
+}
+
 function Cleanup {
     if ($script:TmpDir -and (Test-Path $script:TmpDir)) {
         Remove-Item -Recurse -Force $script:TmpDir -ErrorAction SilentlyContinue
@@ -879,17 +893,25 @@ function Invoke-HealthCheck {
 # 安装总流程
 # ----------------------------------------------------------------------------
 function Invoke-Install {
-    Write-Host '=== frpsmgrd 一键安装 (Windows) ===' -ForegroundColor White
+    $script:StartTs = Get-Date
+    Write-Host '═══════════ frpsmgrd 一键安装 (Windows) ═══════════' -ForegroundColor White
+    $script:PhaseN = 0; $script:PhaseTotal = 6
+    Write-Phase '检测系统环境'
     Get-Platform
+    Write-Phase '解析版本与参数'
     Resolve-Version
     Resolve-Port
     Resolve-Token
     Confirm-Install
+    Write-Phase '下载二进制'
     Install-Binary
+    Write-Phase '安装服务 (NSSM) 与管理命令'
     Install-Nssm
     Register-FrpsmgrService
     Install-Cli
+    Write-Phase '启动并健康检查'
     Invoke-HealthCheck
+    Write-Phase '完成'
     Write-Summary
 }
 
@@ -971,7 +993,7 @@ function Write-UrlLine {
 
 function Write-Summary {
     Write-Host ''
-    Write-Host '✓ 安装完成!' -ForegroundColor Green
+    Write-Host "✓ 安装完成! $(Get-Elapsed)" -ForegroundColor Green
     Write-Host '────────────────────────────────────────────'
     Write-UrlLine '访问地址' "$($script:Port)"
     Write-UrlLine 'API 文档' "$($script:Port)" '/api/docs'
@@ -990,7 +1012,10 @@ function Write-Summary {
 # 全自动更新流程 (保留现有端口/令牌/数据, 仅替换二进制并重启)
 # ----------------------------------------------------------------------------
 function Invoke-Update {
-    Write-Host '=== frpsmgrd 全自动更新 (Windows) ===' -ForegroundColor White
+    $script:StartTs = Get-Date
+    Write-Host '═══════════ frpsmgrd 全自动更新 (Windows) ═══════════' -ForegroundColor White
+    $script:PhaseN = 0; $script:PhaseTotal = 5
+    Write-Phase '检测环境与当前版本'
     Get-Platform
 
     if (-not (Test-Path $script:BinPath)) {
@@ -1000,6 +1025,7 @@ function Invoke-Update {
     $cur = Get-InstalledVersion
     if ($cur) { Write-Info "当前已安装版本: $cur" } else { Write-Info '当前已安装版本: 未知' }
 
+    Write-Phase '解析目标版本'
     Resolve-Version
     $target = $script:Version.TrimStart('v')
 
@@ -1010,12 +1036,15 @@ function Invoke-Update {
     }
 
     Write-Info "准备更新: $(if ($cur) { $cur } else { '?' }) -> $target"
+    Write-Phase '下载二进制'
     # 先停服务再覆盖, 避免 exe 被占用
     if (Test-Service) { & $script:NssmPath stop $ServiceName 2>$null | Out-Null; Start-Sleep -Milliseconds 500 }
     Install-Binary
+    Write-Phase '刷新管理命令并重启服务'
     Install-Cli                 # 顺带刷新管理命令 fms 到最新
     Restart-FrpsmgrService
 
+    Write-Phase '健康检查并完成'
     $script:Port = Get-ServicePort
     if ($script:Port) {
         Invoke-HealthCheck
@@ -1024,7 +1053,7 @@ function Invoke-Update {
     }
 
     Write-Host ''
-    Write-Host "✓ 更新完成! 版本: $target" -ForegroundColor Green
+    Write-Host "✓ 更新完成! 版本: $target  $(Get-Elapsed)" -ForegroundColor Green
     if ($script:Port) {
         # 重置缓存, 让 fms update 也能拿到最新外网 IP
         $script:PublicIpsCache = $null

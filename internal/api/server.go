@@ -65,6 +65,7 @@ func NewRouter(d Deps) http.Handler {
 		r.Get("/api/v1/version", sys.Version)
 		r.Get("/api/v1/version/check", upd.Check)
 		r.Post("/api/v1/system/update", upd.Update)
+		r.Get("/api/v1/system/update/log", upd.Log)
 
 		// UI 品牌持久化（品牌名 / 副标题 / 浏览器标题），仅鉴权后可改
 		r.Put("/api/v1/ui/branding", ui.UpdateBranding)
