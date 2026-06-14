@@ -14,18 +14,19 @@ import (
 //	POST /api/v1/system/update  — launch a detached in-place upgrade + restart
 type UpdateHandler struct {
 	updater      *selfupdate.Updater
-	selfUpdateOn bool
+	selfUpdateFn func() bool
 	logger       *slog.Logger
 }
 
-// NewUpdateHandler wires an UpdateHandler. selfUpdateOn reflects
-// FRPSMGR_SELF_UPDATE_ENABLED; when false the POST endpoint is refused.
-func NewUpdateHandler(dataDir string, selfUpdateOn bool, logger *slog.Logger) *UpdateHandler {
+// NewUpdateHandler wires an UpdateHandler. selfUpdateFn reports whether the
+// web-triggered self-update is currently enabled (env default, overridable at
+// runtime via the system-config UI); when false the POST endpoint is refused.
+func NewUpdateHandler(dataDir string, selfUpdateFn func() bool, logger *slog.Logger) *UpdateHandler {
 	return &UpdateHandler{
 		updater: selfupdate.New(selfupdate.Config{
 			DataDir: dataDir,
 		}),
-		selfUpdateOn: selfUpdateOn,
+		selfUpdateFn: selfUpdateFn,
 		logger:       logger,
 	}
 }
@@ -43,7 +44,7 @@ func (h *UpdateHandler) Check(w http.ResponseWriter, r *http.Request) {
 		"current":             version.Number,
 		"frp":                 version.FRPVersion,
 		"deployment_mode":     string(mode),
-		"self_update_enabled": h.selfUpdateOn,
+		"self_update_enabled": h.selfUpdateFn(),
 	}
 
 	rel, err := h.updater.CheckLatest(r.Context(), force)
@@ -65,8 +66,8 @@ func (h *UpdateHandler) Check(w http.ResponseWriter, r *http.Request) {
 	// can_self_update is the capability (deployment supports it AND operator
 	// enabled it); the frontend combines it with has_update to enable the
 	// button. reason explains a disabled state.
-	canSelf := canDeploy && h.selfUpdateOn
-	if !h.selfUpdateOn {
+	canSelf := canDeploy && h.selfUpdateFn()
+	if !h.selfUpdateFn() {
 		reason = "管理员已禁用 Web 端自更新（FRPSMGR_SELF_UPDATE_ENABLED=false）"
 	}
 	out["can_self_update"] = canSelf
@@ -80,7 +81,7 @@ func (h *UpdateHandler) Check(w http.ResponseWriter, r *http.Request) {
 // /health and /version until the version changes. Pass ?force=1 to reinstall
 // the current latest even when already up to date.
 func (h *UpdateHandler) Update(w http.ResponseWriter, r *http.Request) {
-	if !h.selfUpdateOn {
+	if !h.selfUpdateFn() {
 		WriteError(w, http.StatusForbidden, CodeForbidden,
 			"Web 端自更新已禁用（FRPSMGR_SELF_UPDATE_ENABLED=false）", nil)
 		return

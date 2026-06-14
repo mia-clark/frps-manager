@@ -65,7 +65,7 @@
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `FRPSMGR_API_TOKEN` | （必填） | API 鉴权令牌 |
-| `FRPSMGR_HTTP_ADDR` | `:8080` | 监听地址 |
+| `FRPSMGR_HTTP_ADDR` | `:8080` | 监听地址，可只填端口(如 `8080`，自动补 `:8080`)或 `:端口`/`ip:端口` |
 | `FRPSMGR_DATA_DIR` | `/data` | 数据根目录 |
 | `FRPSMGR_CORS_ORIGINS` | `*` | CORS 白名单（CSV） |
 | `FRPSMGR_LOG_LEVEL` | `info` | trace/debug/info/warn/error |
@@ -187,6 +187,46 @@
 
 ```json
 { "app_name": "我的内网穿透", "app_subtitle": "服务端控制台", "html_title": "我的内网穿透 · 控制台" }
+```
+
+### 1.8 GET `/api/v1/system/config` — 读取运行时系统配置
+
+把原本只能用 `FRPSMGR_*` 环境变量（装机写死、改了要 SSH + 重启）配置的若干项，
+做成 **运行时可调**：env 是启动默认值，UI 的改动作为**覆盖**存进 `meta.json`，
+读取时 `生效值 = env 默认 ∪ meta 覆盖`，**全部免重启即时生效**。
+
+返回三块：`effective`（当前生效值）、`env_default`（环境变量原始默认）、
+`overridden`（各字段是否被覆盖：`true`=已固定为 UI 值，`false`=跟随 env）。
+
+```jsonc
+// 响应 200
+{
+  "effective":   { "log_level": "debug", "self_update_enabled": true, "docs_enabled": false, "cors_origins": ["*"] },
+  "env_default": { "log_level": "info",  "self_update_enabled": true, "docs_enabled": true,  "cors_origins": ["*"] },
+  "overridden":  { "log_level": true,    "self_update_enabled": false, "docs_enabled": true, "cors_origins": false }
+}
+```
+
+### 1.9 PUT `/api/v1/system/config` — 更新运行时系统配置
+
+| 入参（均可选） | 类型 | 说明 |
+|---|---|---|
+| `log_level` | string | `trace\|debug\|info\|warn\|error` 之一，非法值 400。即时改运行 logger 等级 |
+| `self_update_enabled` | bool | 关闭后「关于」页一键更新被禁用（`/system/update` 拒绝） |
+| `docs_enabled` | bool | 关闭后 `/api/docs` 系列返回 404 |
+| `cors_origins` | string[] | CORS 白名单；非空，`["*"]` 放行全部。对后续请求 / 新 WS 连接即时生效 |
+| `reset` | string[] | 列出要**清除覆盖**、回退 env 默认的字段名（同上四个键） |
+
+语义：**提供**的字段写为覆盖；`reset` 里列出的字段清除覆盖。校验：`log_level`
+必须是合法枚举，`cors_origins` 若提供则不能为空数组。返回结构同 1.8（更新后的
+生效值）。覆盖持久化在 `<DataDir>/meta.json` 的 `system_config` 字段，跨重启保留、
+随备份导出。
+
+```jsonc
+// 请求：把日志切到 debug、关掉文档
+{ "log_level": "debug", "docs_enabled": false }
+// 请求：恢复某几项为 env 默认
+{ "reset": ["log_level", "docs_enabled"] }
 ```
 
 ---
@@ -722,10 +762,10 @@ Query：
 
 `multipart/form-data` 的 `file` 字段，≤ 32 MiB，内含 `*.toml/*.ini/*.conf`。重名覆盖。
 
-若包内含 `meta.json`（由 9.6 导出的备份自带），配置就位后会一并还原**品牌**（app_name/app_subtitle/html_title）与**实例显示顺序**（sort）；`branding_restored` / `order_restored` 表示是否实际还原。其余（log_view_since/names/manual）不动。
+若包内含 `meta.json`（由 9.6 导出的备份自带），配置就位后会一并还原**品牌**（app_name/app_subtitle/html_title）、**实例显示顺序**（sort）与**系统运行时覆盖**（system_config：日志级别 / Web 自更新 / 文档 / CORS，见 §1.8-1.9，自更新/文档/CORS 即时生效、日志级别下次重启后生效，仅当备份确有覆盖时才还原）；`branding_restored` / `order_restored` / `system_config_restored` 表示各项是否实际还原。其余（log_view_since/names/manual）不动。
 
 ```json
-{ "imported": ["edge-tokyo", "edge-osaka"], "branding_restored": true, "order_restored": true }
+{ "imported": ["edge-tokyo", "edge-osaka"], "branding_restored": true, "order_restored": true, "system_config_restored": true }
 ```
 
 ### 9.5 `GET /api/v1/configs/{id}/export` — 单实例下载

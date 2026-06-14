@@ -19,19 +19,21 @@ import (
 type EventsHandler struct {
 	m       *manager.Manager
 	log     *slog.Logger
-	origins []string
+	origins func() []string
 }
 
-// NewEventsHandler builds an EventsHandler.
-func NewEventsHandler(m *manager.Manager, log *slog.Logger, origins []string) *EventsHandler {
-	return &EventsHandler{m: m, log: log, origins: origins}
+// NewEventsHandler builds an EventsHandler. originsFn is read per-connection so
+// a runtime CORS change applies to new WebSocket upgrades too.
+func NewEventsHandler(m *manager.Manager, log *slog.Logger, originsFn func() []string) *EventsHandler {
+	return &EventsHandler{m: m, log: log, origins: originsFn}
 }
 
 // Subscribe handles GET /api/v1/events upgrades.
 func (h *EventsHandler) Subscribe(w http.ResponseWriter, r *http.Request) {
+	origins := h.origins()
 	acceptOpts := &websocket.AcceptOptions{
-		InsecureSkipVerify: middleware.IsWildcard(h.origins),
-		OriginPatterns:     h.origins,
+		InsecureSkipVerify: middleware.IsWildcard(origins),
+		OriginPatterns:     origins,
 	}
 	conn, err := websocket.Accept(w, r, acceptOpts)
 	if err != nil {

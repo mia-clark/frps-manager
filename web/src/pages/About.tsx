@@ -639,7 +639,7 @@ function renderEnvTab(opts: { token: TokenLike }) {
 
   const envs: Array<{ key: string; required: string; default: string; desc: string }> = [
     { key: 'FRPSMGR_API_TOKEN',     required: '✓', default: '—',        desc: 'API 鉴权 Bearer 令牌，登录管理面板的凭证。建议 openssl rand -hex 32 生成。' },
-    { key: 'FRPSMGR_HTTP_ADDR',     required: '',  default: ':8080',     desc: '监听地址，格式 :端口 或 ip:端口。' },
+    { key: 'FRPSMGR_HTTP_ADDR',     required: '',  default: ':8080',     desc: '监听地址，可只填端口(如 8080，自动补为 :8080)或 :端口/ip:端口。' },
     { key: 'FRPSMGR_DATA_DIR',      required: '',  default: '/data',     desc: '数据根目录。子目录：profiles/(配置 TOML)、logs/(每实例日志)、metrics.db(SQLite 时序)、meta.json(元数据)。' },
     { key: 'FRPSMGR_CORS_ORIGINS',  required: '',  default: '*',         desc: '逗号分隔的 CORS 白名单。前后端分离调试时填具体 origin。' },
     { key: 'FRPSMGR_LOG_LEVEL',     required: '',  default: 'info',      desc: 'trace / debug / info / warn / error。' },

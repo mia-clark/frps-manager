@@ -24,6 +24,40 @@ type Meta struct {
 	// Branding holds the operator-customizable UI brand name, subtitle and
 	// browser title. nil / empty fields resolve to the Default* constants on read.
 	Branding *Branding `json:"branding,omitempty"`
+	// SystemConfig holds operator overrides for runtime daemon settings,
+	// layered on top of the FRPSMGR_* env defaults. nil fields use the env value.
+	SystemConfig *SystemConfig `json:"system_config,omitempty"`
+}
+
+// SystemConfig holds operator overrides for runtime daemon settings, persisted
+// in meta.json so a Web UI change survives restarts. Each field is a pointer:
+// nil means "fall back to the FRPSMGR_* env value", a set value overrides it.
+type SystemConfig struct {
+	LogLevel          *string   `json:"log_level,omitempty"` // trace|debug|info|warn|error
+	SelfUpdateEnabled *bool     `json:"self_update_enabled,omitempty"`
+	DocsEnabled       *bool     `json:"docs_enabled,omitempty"`
+	CORSOrigins       *[]string `json:"cors_origins,omitempty"`
+}
+
+func cloneSystemConfig(c SystemConfig) SystemConfig {
+	out := SystemConfig{}
+	if c.LogLevel != nil {
+		v := *c.LogLevel
+		out.LogLevel = &v
+	}
+	if c.SelfUpdateEnabled != nil {
+		v := *c.SelfUpdateEnabled
+		out.SelfUpdateEnabled = &v
+	}
+	if c.DocsEnabled != nil {
+		v := *c.DocsEnabled
+		out.DocsEnabled = &v
+	}
+	if c.CORSOrigins != nil {
+		v := append([]string(nil), *c.CORSOrigins...)
+		out.CORSOrigins = &v
+	}
+	return out
 }
 
 // Branding is the persisted, operator-editable UI branding. Stored inside
@@ -127,7 +161,47 @@ func (s *metaStore) snapshot() Meta {
 		b := *s.data.Branding
 		m.Branding = &b
 	}
+	if s.data.SystemConfig != nil {
+		c := cloneSystemConfig(*s.data.SystemConfig)
+		m.SystemConfig = &c
+	}
 	return m
+}
+
+// systemConfig returns the raw stored overrides (no env defaults applied).
+func (s *metaStore) systemConfig() SystemConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.data.SystemConfig == nil {
+		return SystemConfig{}
+	}
+	return cloneSystemConfig(*s.data.SystemConfig)
+}
+
+// setSystemConfig persists the overrides wholesale (atomic write).
+func (s *metaStore) setSystemConfig(c SystemConfig) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cc := cloneSystemConfig(c)
+	s.data.SystemConfig = &cc
+	return s.flushLocked()
+}
+
+// updateSystemConfig runs the whole read-modify-write under the store lock so
+// two concurrent callers can't lose each other's field updates: apply receives
+// a clone of the current overrides to mutate, and the result is persisted while
+// the lock is still held. A nil field means "follow the env default".
+func (s *metaStore) updateSystemConfig(apply func(*SystemConfig)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cur := SystemConfig{}
+	if s.data.SystemConfig != nil {
+		cur = cloneSystemConfig(*s.data.SystemConfig)
+	}
+	apply(&cur)
+	cc := cloneSystemConfig(cur)
+	s.data.SystemConfig = &cc
+	return s.flushLocked()
 }
 
 // branding returns the raw stored branding (no defaults applied). A zero

@@ -72,17 +72,17 @@ const docsHTML = `<!doctype html>
 
 // DocsHandler serves the embedded API spec and a browser-friendly viewer.
 type DocsHandler struct {
-	enabled bool
+	enabledFn func() bool
 }
 
-// NewDocsHandler builds a DocsHandler. When enabled is false every
-// request returns 404 so operators can fully hide the docs.
-func NewDocsHandler(enabled bool) *DocsHandler {
-	return &DocsHandler{enabled: enabled}
+// NewDocsHandler builds a DocsHandler. enabledFn is read per-request so the docs
+// surface can be toggled at runtime; when it returns false every request 404s.
+func NewDocsHandler(enabledFn func() bool) *DocsHandler {
+	return &DocsHandler{enabledFn: enabledFn}
 }
 
-// Enabled reports whether the docs surface should be mounted.
-func (h *DocsHandler) Enabled() bool { return h != nil && h.enabled }
+// Enabled reports whether the docs surface is currently exposed.
+func (h *DocsHandler) Enabled() bool { return h != nil && h.enabledFn != nil && h.enabledFn() }
 
 // Spec serves the raw OpenAPI YAML.
 func (h *DocsHandler) Spec(w http.ResponseWriter, r *http.Request) {
@@ -119,8 +119,14 @@ func (h *DocsHandler) UI(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(docsHTML))
 }
 
-// Redirect bounces a trailing-slash-less /api/docs to the canonical URL.
+// Redirect bounces a trailing-slash-less /api/docs to the canonical URL. Like
+// its sibling handlers it 404s when docs are disabled, so the whole /api/docs*
+// surface vanishes consistently instead of leaking a 301 to a 404 target.
 func (h *DocsHandler) Redirect(w http.ResponseWriter, r *http.Request) {
+	if !h.Enabled() {
+		http.NotFound(w, r)
+		return
+	}
 	target := strings.TrimSuffix(r.URL.Path, "/") + "/"
 	http.Redirect(w, r, target, http.StatusMovedPermanently)
 }

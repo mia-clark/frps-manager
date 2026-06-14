@@ -14,6 +14,8 @@ import {
   Col,
   Alert,
   Input,
+  Select,
+  Tooltip,
   theme as antdTheme,
 } from 'antd';
 import {
@@ -21,11 +23,13 @@ import {
   SettingOutlined,
   KeyOutlined,
   TagsOutlined,
+  ControlOutlined,
 } from '@ant-design/icons';
 import { clearAPIToken, getAPIToken } from '../api/client';
 import { useTheme } from '../theme/ThemeContext';
 import { useBranding } from '../branding/BrandingContext';
 import { updateBranding } from '../api/branding';
+import { getSysConfig, updateSysConfig, type SysConfigResp, type SysConfigPatch } from '../api/syscfg';
 
 const { Title, Text } = Typography;
 
@@ -98,6 +102,129 @@ const Settings: React.FC = () => {
     localStorage.setItem('frpsmgr_sidebar_collapse', v ? '1' : '0');
     message.success('已保存，下次刷新生效');
   };
+
+  // ---- 系统运行时配置（env 默认 ∪ meta.json 覆盖，免重启生效）----
+  type SysField = 'log_level' | 'self_update_enabled' | 'docs_enabled' | 'cors_origins';
+  const [sysForm] = Form.useForm();
+  const [sysCfg, setSysCfg] = useState<SysConfigResp | null>(null);
+  const [savingSys, setSavingSys] = useState(false);
+  // 每个字段是否「跟随 env」：true = 不覆盖、随环境变量；false = 固定为下方 UI 值。
+  const [follow, setFollow] = useState<Record<SysField, boolean>>({
+    log_level: true,
+    self_update_enabled: true,
+    docs_enabled: true,
+    cors_origins: true,
+  });
+
+  // 用一份服务端响应回填表单与「跟随 env」开关，保证显示=服务端真实生效值。
+  const fillSysForm = (r: SysConfigResp) => {
+    sysForm.setFieldsValue({
+      log_level: r.effective.log_level,
+      self_update_enabled: r.effective.self_update_enabled,
+      docs_enabled: r.effective.docs_enabled,
+      cors_origins: (r.effective.cors_origins || []).join(', '),
+    });
+    setFollow({
+      log_level: !r.overridden.log_level,
+      self_update_enabled: !r.overridden.self_update_enabled,
+      docs_enabled: !r.overridden.docs_enabled,
+      cors_origins: !r.overridden.cors_origins,
+    });
+  };
+
+  // 挂载时拉取一次；setState 落在 then 回调（异步）里，未登录/网络问题静默（卡片不渲染）。
+  useEffect(() => {
+    getSysConfig()
+      .then((r) => {
+        setSysCfg(r);
+        fillSysForm(r);
+      })
+      .catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 切换某字段「跟随 env」：打开跟随时把输入框回显为 env 默认，便于看清将生效什么。
+  const toggleFollow = (k: SysField, v: boolean) => {
+    setFollow((prev) => ({ ...prev, [k]: v }));
+    if (v && sysCfg) {
+      const env = sysCfg.env_default;
+      sysForm.setFieldsValue({
+        [k]: k === 'cors_origins' ? (env.cors_origins || []).join(', ') : env[k],
+      });
+    }
+  };
+
+  const onSaveSysCfg = async (vals: {
+    log_level: string;
+    self_update_enabled: boolean;
+    docs_enabled: boolean;
+    cors_origins: string;
+  }) => {
+    // 跟随 env 的字段进 reset[]（清除覆盖）；其余作为覆盖下发。这样逐项「跟随 env」
+    // 真正生效，且空 CORS 不会被悄悄兜底成 *（与后端「非空校验」语义一致）。
+    const patch: SysConfigPatch = { reset: [] };
+    if (follow.log_level) patch.reset!.push('log_level');
+    else patch.log_level = vals.log_level;
+    if (follow.self_update_enabled) patch.reset!.push('self_update_enabled');
+    else patch.self_update_enabled = vals.self_update_enabled;
+    if (follow.docs_enabled) patch.reset!.push('docs_enabled');
+    else patch.docs_enabled = vals.docs_enabled;
+    if (follow.cors_origins) {
+      patch.reset!.push('cors_origins');
+    } else {
+      const origins = vals.cors_origins
+        .split(/[,\n]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (origins.length === 0) {
+        message.error('CORS 白名单不能为空：填具体来源、填 * 放行全部，或切到「跟随 env」');
+        return;
+      }
+      patch.cors_origins = origins;
+    }
+    setSavingSys(true);
+    try {
+      const r = await updateSysConfig(patch);
+      setSysCfg(r);
+      fillSysForm(r);
+      message.success('系统配置已保存，已即时生效（无需重启）');
+    } catch (e) {
+      const err = e as { response?: { data?: { error?: { message?: string } } } };
+      message.error('保存失败：' + (err.response?.data?.error?.message || '请检查输入与网络'));
+    } finally {
+      setSavingSys(false);
+    }
+  };
+
+  const onResetSysCfg = async () => {
+    setSavingSys(true);
+    try {
+      const r = await updateSysConfig({ reset: ['log_level', 'self_update_enabled', 'docs_enabled', 'cors_origins'] });
+      setSysCfg(r);
+      fillSysForm(r);
+      message.success('已恢复为环境变量默认值');
+    } catch {
+      message.error('恢复失败');
+    } finally {
+      setSavingSys(false);
+    }
+  };
+
+  // 字段标签 + 「跟随 env」开关：开=跟随环境变量(灰显输入)，关=用下方 UI 值覆盖。
+  const sysLabel = (k: SysField, text: string) => (
+    <Space size={6}>
+      {text}
+      <Tooltip title="开：跟随 FRPSMGR_* 环境变量（保存即清除该项覆盖）；关：固定为下方填写的值">
+        <Switch
+          size="small"
+          checkedChildren="跟随env"
+          unCheckedChildren="自定义"
+          checked={follow[k]}
+          onChange={(v) => toggleFollow(k, v)}
+        />
+      </Tooltip>
+    </Space>
+  );
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
@@ -227,6 +354,80 @@ const Settings: React.FC = () => {
           }
         />
       </Card>
+
+      {sysCfg && (
+        <Card
+          title={<Space><ControlOutlined /> 系统 / 运行（免重启即时生效）</Space>}
+          styles={{ body: { padding: 18 } }}
+          style={{ borderRadius: 10 }}
+        >
+          <Form
+            form={sysForm}
+            layout="horizontal"
+            labelCol={{ span: 7 }}
+            wrapperCol={{ span: 17 }}
+            onFinish={onSaveSysCfg}
+            style={{ maxWidth: 640 }}
+          >
+            <Form.Item label={sysLabel('log_level', '日志级别')} name="log_level">
+              <Select
+                disabled={follow.log_level}
+                options={[
+                  { value: 'trace', label: 'trace（最详细，等同 debug）' },
+                  { value: 'debug', label: 'debug（排查问题）' },
+                  { value: 'info', label: 'info（默认）' },
+                  { value: 'warn', label: 'warn' },
+                  { value: 'error', label: 'error（最少）' },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item
+              label={sysLabel('self_update_enabled', 'Web 自更新')}
+              name="self_update_enabled"
+              valuePropName="checked"
+              extra="关闭后「关于」页的一键更新被禁用"
+            >
+              <Switch disabled={follow.self_update_enabled} checkedChildren="开" unCheckedChildren="关" />
+            </Form.Item>
+            <Form.Item
+              label={sysLabel('docs_enabled', 'API 文档 /api/docs')}
+              name="docs_enabled"
+              valuePropName="checked"
+              extra="关闭后 /api/docs 返回 404"
+            >
+              <Switch disabled={follow.docs_enabled} checkedChildren="开" unCheckedChildren="关" />
+            </Form.Item>
+            <Form.Item
+              label={sysLabel('cors_origins', 'CORS 白名单')}
+              name="cors_origins"
+              extra="逗号或换行分隔；填 * 放行全部跨域（含 * 时整列按通配处理）。改动对后续请求/新 WS 连接即时生效。"
+            >
+              <Input.TextArea disabled={follow.cors_origins} autoSize={{ minRows: 1, maxRows: 4 }} placeholder="*" />
+            </Form.Item>
+            <Form.Item wrapperCol={{ offset: 7 }} style={{ marginBottom: 0 }}>
+              <Space>
+                <Button type="primary" htmlType="submit" loading={savingSys}>保存系统配置</Button>
+                <Tooltip title="清除全部 UI 覆盖，回退到 FRPSMGR_* 环境变量默认值">
+                  <Button onClick={onResetSysCfg} loading={savingSys}>恢复 env 默认</Button>
+                </Tooltip>
+              </Space>
+            </Form.Item>
+          </Form>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginTop: 16, borderRadius: 8 }}
+            message="env 默认 ∪ UI 覆盖（存 meta.json，跨重启保留、随备份迁移）"
+            description={
+              <Text style={{ fontSize: 12 }}>
+                这些原本是 FRPSMGR_* 环境变量（装机写死、改了要 SSH + 重启）。每行的「跟随 env」开关：
+                开=该项不覆盖、跟随环境变量（保存即清除覆盖）；关=固定为你填写的值。日志级别/自更新/文档/CORS
+                改动均**无需重启**即时生效；「恢复 env 默认」会一次性清除全部覆盖。
+              </Text>
+            }
+          />
+        </Card>
+      )}
     </Space>
   );
 };

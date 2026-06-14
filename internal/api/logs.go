@@ -22,12 +22,13 @@ type LogsHandler struct {
 	m       *manager.Manager
 	logsDir string
 	log     *slog.Logger
-	origins []string
+	origins func() []string
 }
 
-// NewLogsHandler builds a LogsHandler.
-func NewLogsHandler(m *manager.Manager, logsDir string, log *slog.Logger, origins []string) *LogsHandler {
-	return &LogsHandler{m: m, logsDir: logsDir, log: log, origins: origins}
+// NewLogsHandler builds a LogsHandler. originsFn is read per-connection so a
+// runtime CORS change applies to new WebSocket upgrades too.
+func NewLogsHandler(m *manager.Manager, logsDir string, log *slog.Logger, originsFn func() []string) *LogsHandler {
+	return &LogsHandler{m: m, logsDir: logsDir, log: log, origins: originsFn}
 }
 
 // logInstancePath 返回单个实例的独立日志文件绝对路径。子进程模型下，每个
@@ -117,9 +118,10 @@ func (h *LogsHandler) Tail(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, http.StatusNotFound, CodeConfigNotFound, "config not found", nil)
 		return
 	}
+	origins := h.origins()
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: middleware.IsWildcard(h.origins),
-		OriginPatterns:     h.origins,
+		InsecureSkipVerify: middleware.IsWildcard(origins),
+		OriginPatterns:     origins,
 	})
 	if err != nil {
 		h.log.Warn("ws accept failed", slog.Any("err", err))

@@ -158,18 +158,19 @@ func (h *ImportExportHandler) ImportZIP(w http.ResponseWriter, r *http.Request) 
 		imported = append(imported, id)
 	}
 
-	// 配置就位后再还原 meta（品牌 + 排序），这样 Reorder 能解析到刚导入的 id。
-	brandingRestored, orderRestored := false, false
+	// 配置就位后再还原 meta（品牌 + 排序 + 系统运行时配置），这样 Reorder 能解析到刚导入的 id。
+	brandingRestored, orderRestored, systemConfigRestored := false, false, false
 	if len(metaRaw) > 0 {
 		var err error
-		if brandingRestored, orderRestored, err = h.m.ImportMeta(metaRaw); err != nil {
+		if brandingRestored, orderRestored, systemConfigRestored, err = h.m.ImportMeta(metaRaw); err != nil {
 			h.log.Warn("restore meta from import failed", slog.Any("err", err))
 		}
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{
-		"imported":          imported,
-		"branding_restored": brandingRestored,
-		"order_restored":    orderRestored,
+		"imported":               imported,
+		"branding_restored":      brandingRestored,
+		"order_restored":         orderRestored,
+		"system_config_restored": systemConfigRestored,
 	})
 }
 

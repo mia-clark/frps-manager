@@ -38,7 +38,7 @@ func TestLogsQuery_ReadsOwnFile(t *testing.T) {
 		"2026-06-03 15:17:50.544 [D] heartbeat",
 	})
 
-	h := NewLogsHandler(m, filepath.Join(tmp, "logs"), testLogger(), []string{"*"})
+	h := NewLogsHandler(m, filepath.Join(tmp, "logs"), testLogger(), func() []string { return []string{"*"} })
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/configs/A/logs?lines=10", nil)
 	req = withPathID(req, "A")
@@ -118,7 +118,7 @@ func TestLogsTail_StreamsOwnFile(t *testing.T) {
 	mustCreateInstance(t, m, "A")
 	seedLog(t, m.LogPath("A"), []string{})
 
-	h := NewLogsHandler(m, filepath.Join(tmp, "logs"), testLogger(), []string{"*"})
+	h := NewLogsHandler(m, filepath.Join(tmp, "logs"), testLogger(), func() []string { return []string{"*"} })
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r = withPathID(r, "A")
@@ -186,7 +186,7 @@ func TestLogsClear_SetsViewSince(t *testing.T) {
 	seedLog(t, logPath, []string{
 		"2026-06-03 10:00:00.000 [I] old",
 	})
-	h := NewLogsHandler(m, filepath.Join(tmp, "logs"), testLogger(), []string{"*"})
+	h := NewLogsHandler(m, filepath.Join(tmp, "logs"), testLogger(), func() []string { return []string{"*"} })
 
 	// 1. Clear A
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/configs/A/logs", nil)
@@ -220,7 +220,7 @@ func TestLogsClear_SetsViewSince(t *testing.T) {
 func TestLogsClear_404OnUnknownID(t *testing.T) {
 	tmp := t.TempDir()
 	m := newTestManager(t, tmp)
-	h := NewLogsHandler(m, filepath.Join(tmp, "logs"), testLogger(), []string{"*"})
+	h := NewLogsHandler(m, filepath.Join(tmp, "logs"), testLogger(), func() []string { return []string{"*"} })
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/configs/nonexistent/logs", nil)
 	req = withPathID(req, "nonexistent")
@@ -241,7 +241,7 @@ func TestLogsQuery_RespectsViewSince(t *testing.T) {
 		"2026-06-03 12:00:00.000 [I] line-2-old",
 		"2026-06-03 14:00:00.000 [I] line-3-new",
 	})
-	h := NewLogsHandler(m, filepath.Join(tmp, "logs"), testLogger(), []string{"*"})
+	h := NewLogsHandler(m, filepath.Join(tmp, "logs"), testLogger(), func() []string { return []string{"*"} })
 
 	cutoff, err := time.ParseInLocation("2006-01-02 15:04:05.000",
 		"2026-06-03 13:00:00.000", time.Local)

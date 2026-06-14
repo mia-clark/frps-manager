@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -80,7 +79,14 @@ func runServe(args []string) int {
 		return 1
 	}
 
-	logger := newLogger(cfg.LogLevel)
+	logger, levelVar := newLogger(cfg.LogLevel)
+	// Surface any FRPSMGR_HTTP_ADDR normalization warning now that the logger
+	// exists (appcfg.Load runs before the logger is built, so it can only stash
+	// the text). Non-empty means the value was left as-is for net.Listen to
+	// reject — better a visible error than silently binding the default port.
+	if cfg.HTTPAddrWarn != "" {
+		logger.Warn("listen addr normalize", slog.String("detail", cfg.HTTPAddrWarn))
+	}
 	logger.Info("starting frpsmgrd",
 		slog.String("addr", cfg.HTTPAddr),
 		slog.String("data_dir", cfg.DataDir),
@@ -122,7 +128,7 @@ func runServe(args []string) int {
 		go sampler.Run(samplerCtx)
 	}
 
-	handler := api.NewRouter(api.Deps{Cfg: cfg, Logger: logger, Manager: mgr, Metrics: mstore})
+	handler := api.NewRouter(api.Deps{Cfg: cfg, Logger: logger, Manager: mgr, Metrics: mstore, LogLevel: levelVar})
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           handler,
@@ -176,17 +182,13 @@ func runHealth(args []string) int {
 	return 0
 }
 
-func newLogger(level string) *slog.Logger {
-	var lv slog.Level
-	switch strings.ToLower(level) {
-	case "trace", "debug":
-		lv = slog.LevelDebug
-	case "warn":
-		lv = slog.LevelWarn
-	case "error":
-		lv = slog.LevelError
-	default:
-		lv = slog.LevelInfo
-	}
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lv}))
+// newLogger builds the process logger backed by a *slog.LevelVar, returned
+// alongside so the runtime system-config endpoint can change verbosity live
+// (no restart). The initial level comes from FRPSMGR_LOG_LEVEL; a persisted
+// meta.json override is re-applied later by api.NewRuntimeConfig.
+func newLogger(level string) (*slog.Logger, *slog.LevelVar) {
+	lv := new(slog.LevelVar)
+	lv.Set(appcfg.ParseLevel(level))
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lv}))
+	return logger, lv
 }
