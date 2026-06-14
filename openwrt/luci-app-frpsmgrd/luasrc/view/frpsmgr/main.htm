@@ -50,6 +50,16 @@
 	.fmx .fm-inline{display:flex;gap:8px;align-items:stretch;flex-wrap:wrap}
 	.fmx .fm-inline input{flex:1 1 200px}
 
+	/* 开关（开机自启）—— 自带样式，独立于 .fm-field 通用 input 规则与主题，确保勾选态清晰可见 */
+	.fmx .fm-toggle{grid-column:1/-1;display:flex;flex-direction:column;min-width:0}
+	.fmx .fm-switch{display:inline-flex;align-items:center;gap:9px;cursor:pointer;user-select:none;position:relative}
+	.fmx .fm-switch input{position:absolute;opacity:0;width:0;height:0;margin:0}
+	.fmx .fm-switch .fm-switch-track{flex:0 0 auto;width:42px;height:23px;border-radius:23px;background:#c7ccd6;position:relative;transition:background .15s}
+	.fmx .fm-switch .fm-switch-knob{position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .15s}
+	.fmx .fm-switch input:checked + .fm-switch-track{background:#16a34a}
+	.fmx .fm-switch input:checked + .fm-switch-track .fm-switch-knob{transform:translateX(19px)}
+	.fmx .fm-switch .fm-switch-text{font-size:13px;font-weight:500;opacity:.9}
+
 	/* 按钮体系（height:auto 抵消主题强制的 2.5rem 高） */
 	.fmx .fm-btns{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-top:4px}
 	.fmx .fm-spacer{flex:1 1 auto;min-width:8px}
@@ -171,6 +181,14 @@
 					<label><%:数据目录%></label>
 					<input type="text" id="cfg_data_dir" placeholder="/usr/lib/frpsmgrd">
 					<div class="fm-sub"><%:存放服务端配置、日志与指标库，须为持久化路径；勿用 /tmp、/var 等易失目录，否则重启丢配置。%></div>
+				</div>
+				<div class="fm-toggle">
+					<label class="fm-switch">
+						<input type="checkbox" id="cfg_boot_autostart">
+						<span class="fm-switch-track"><span class="fm-switch-knob"></span></span>
+						<span class="fm-switch-text"><%:开机自动启动（强制）%></span>
+					</label>
+					<div class="fm-sub"><%:勾选：即使在本页点了「停止」，系统重启或升级核心后也会强制自动启动。不勾选（默认）：保持上次的启停状态——停止的重启后仍停止，运行的重启后仍运行。（改动需点下方「保存并重启生效」后生效）%></div>
 				</div>
 			</div>
 
@@ -326,12 +344,14 @@
 			$('fm_nobin').style.display = nobin ? 'flex' : 'none';
 			$('fm_tabdot').style.display = nobin ? 'inline-block' : 'none';
 
+			window.LAST_RUNNING = !!d.running;
 			var c = d.cfg||{};
 			if(!(document.activeElement && document.activeElement.tagName==='INPUT')){
 				$('cfg_http_addr').value = c.http_addr||'';
 				$('cfg_token').value = c.token||'';
 				$('cfg_data_dir').value = c.data_dir||'';
 				$('cfg_log_level').value = c.log_level||'info';
+				$('cfg_boot_autostart').checked = (c.boot_autostart === '1' || c.boot_autostart === 1);
 			}
 			curPort = portFromAddr(c.http_addr);
 
@@ -429,14 +449,18 @@
 			http_addr: $('cfg_http_addr').value,
 			token: $('cfg_token').value,
 			data_dir: $('cfg_data_dir').value,
-			log_level: $('cfg_log_level').value
+			log_level: $('cfg_log_level').value,
+			boot_autostart: $('cfg_boot_autostart').checked ? '1' : '0'
 		});
+		// 仅当服务当前在运行时才重启以应用新配置；若处于停止状态，则只保存、保持停止
+		// （下次启动自动使用新配置），避免编辑配置把用户的停止状态意外改成运行。
+		var wasRunning = !!window.LAST_RUNNING;
 		req('save','POST',body).then(function(r){
 			if(!(r && r.ok)) throw new Error('save failed');
-			return req('control/restart');
+			return wasRunning ? req('control/restart') : Promise.resolve();
 		}).then(function(){
 			clearToast(t); busy(btn,false);
-			toast('✓ <%:已保存并重启生效%>', 'success');
+			toast(wasRunning ? '✓ <%:已保存并重启生效%>' : '✓ <%:已保存（当前为停止状态，保持停止）%>', 'success');
 			setTimeout(refresh, 800);
 		}).catch(function(e){ clearToast(t); busy(btn,false); toast('✗ <%:保存失败：%>'+e.message, 'error'); });
 	}
